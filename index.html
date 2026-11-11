@@ -46,7 +46,7 @@
           <button class="btn" id="btnPaste" type="button">Вставить CSV</button>
           <button class="btn" id="btnDemo" type="button">Демо</button>
         </div>
-        <p class="hint">Лист должен быть доступен по ссылке («Все, у кого есть ссылка — читатель»). Колонки: имя и 11 скилов — порядок не важен, шапка распознаётся.</p>
+        <p class="hint">Лист должен быть доступен по ссылке («Все, у кого есть ссылка — читатель»). Колонки: имя и 8 скилов — порядок не важен, шапка распознаётся.</p>
       </div>
 
       <div class="card">
@@ -125,13 +125,10 @@
             </ul>
           </div>
           <div>
-            <h3>Ворота (5)</h3>
+            <h3>Ворота (2)</h3>
             <ul>
-              <li><b>Бросок</b> — игра в падении</li>
-              <li><b>Руки</b> — надёжность хвата</li>
-              <li><b>Вынос</b> — удар от ворот</li>
               <li><b>Реакция</b> — сейвы в упор</li>
-              <li><b>Позиция</b> — выбор места</li>
+              <li><b>Позиционирование</b> — выбор места, игра на выходах</li>
             </ul>
           </div>
         </div>
@@ -153,15 +150,15 @@
         <p class="muted small">Лист, например <code>Players</code>. Первая строка — шапка. Нужны имя и скилы; колонка «Позиция» не требуется. Пустые скилы считаются «средними по компании».</p>
         <div class="tablewrap">
           <table class="ref-table">
-            <thead><tr><th>Имя</th><th>PAC</th><th>SHO</th><th>PAS</th><th>DRI</th><th>DEF</th><th>PHY</th><th>DIV</th><th>HAN</th><th>KIC</th><th>REF</th><th>POS</th></tr></thead>
+            <thead><tr><th>Имя</th><th>PAC</th><th>SHO</th><th>PAS</th><th>DRI</th><th>DEF</th><th>PHY</th><th>REF</th><th>POS</th></tr></thead>
             <tbody>
-              <tr><td>Миша</td><td>6</td><td>4.5</td><td>6</td><td>6</td><td>5</td><td>6</td><td>7</td><td>7.5</td><td>6</td><td>8</td><td>7</td></tr>
-              <tr><td>Андрей</td><td>6</td><td>4</td><td>6</td><td>5</td><td>8</td><td>7</td><td>4.5</td><td>5</td><td>6</td><td>5.5</td><td>5</td></tr>
-              <tr><td>Костя</td><td>9</td><td>8</td><td>5</td><td>8</td><td>3</td><td>4</td><td>4</td><td>4.5</td><td>5.5</td><td>5</td><td>4.5</td></tr>
+              <tr><td>Миша</td><td>6</td><td>4.5</td><td>6</td><td>6</td><td>5</td><td>6</td><td>8</td><td>7</td></tr>
+              <tr><td>Андрей</td><td>6</td><td>4</td><td>6</td><td>5</td><td>8</td><td>7</td><td>5.5</td><td>5</td></tr>
+              <tr><td>Костя</td><td>9</td><td>8</td><td>5</td><td>8</td><td>3</td><td>4</td><td>5</td><td>4.5</td></tr>
             </tbody>
           </table>
         </div>
-        <p class="muted small">Шапка понимает и русские названия: Скорость, Удар, Пас, Дриблинг, Защита, Физика, Бросок, Руки, Вынос, Реакция, Позиционирование.</p>
+        <p class="muted small">Шапка понимает и русские названия: Скорость, Удар, Пас, Дриблинг, Защита, Физика, Реакция, Позиционирование.</p>
       </div>
 
       <div class="card">
@@ -208,11 +205,8 @@
     <div class="skill-section">
       <h3>В воротах</h3>
       <div class="skills-grid" id="gkSkills">
-        <label><span>Бросок</span><input data-gk="div" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
-        <label><span>Руки</span><input data-gk="han" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
-        <label><span>Вынос</span><input data-gk="kic" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
         <label><span>Реакция</span><input data-gk="ref" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
-        <label><span>Позиция</span><input data-gk="gkpos" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Позиционирование</span><input data-gk="gkpos" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
       </div>
     </div>
 
