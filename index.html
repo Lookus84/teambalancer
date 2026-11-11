@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#070b14" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Баланс команд" />
+<title>Баланс команд</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">⚽</span>
+      <div class="brand-text">
+        <h1>Баланс команд</h1>
+        <p id="subtitle">Игроков нет — загрузи таблицу</p>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ================= СОСТАВ ================= -->
+    <section class="view" id="view-players">
+      <div class="card">
+        <div class="card-head">
+          <h2>Откуда берём состав</h2>
+          <span class="pill" id="srcState">не подключено</span>
+        </div>
+        <label class="field">
+          <span>Ссылка на Google Таблицу</span>
+          <input id="sheetUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                 placeholder="https://docs.google.com/spreadsheets/d/…" />
+        </label>
+        <div class="row">
+          <button class="btn primary" id="btnLoadSheet" type="button">Загрузить</button>
+          <button class="btn" id="btnPaste" type="button">Вставить CSV</button>
+          <button class="btn" id="btnDemo" type="button">Демо</button>
+        </div>
+        <p class="hint">Лист должен быть доступен по ссылке («Все, у кого есть ссылка — читатель»). Колонки: имя и 11 скилов — порядок не важен, шапка распознаётся.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Явка на игру</h2>
+          <span class="pill" id="attState">не загружена</span>
+        </div>
+        <label class="field">
+          <span>Ссылка на лист ответов формы</span>
+          <input id="attUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                 placeholder="Лист «Ответы на форму»" />
+        </label>
+        <div class="row">
+          <button class="btn primary" id="btnLoadAtt" type="button">Загрузить явку</button>
+        </div>
+        <div class="att-summary" id="attSummary" hidden></div>
+        <p class="hint">Форма на три вопроса: «Дата игры», «Игрок», «Приду / Не приду». Приложение берёт последнюю дату игры и учитывает только тех, кто ответил «Приду».</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Игроки <span class="count" id="playerCount">0</span></h2>
+          <button class="btn ghost" id="btnAdd" type="button">+ игрок</button>
+        </div>
+        <div class="stats" id="rosterStats"></div>
+        <div class="players" id="playersList"></div>
+        <div class="empty" id="playersEmpty">
+          <p>Пока пусто.</p>
+          <p class="muted">Загрузите таблицу, вставьте CSV или накидайте игроков вручную.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= КОМАНДЫ ================= -->
+    <section class="view" id="view-teams" hidden>
+      <div class="card">
+        <div class="card-head"><h2>Распределение</h2><span class="pill" id="teamsReady">—</span></div>
+
+        <div class="segmented" id="teamCount" role="tablist">
+          <button type="button" data-teams="2" role="tab">2 команды</button>
+          <button type="button" data-teams="3" role="tab" class="on">3 команды</button>
+        </div>
+
+        <div class="switches">
+          <label class="switch">
+            <input type="checkbox" id="optOnlyGoing" />
+            <span>Только те, кто придёт на игру (<span id="goingCount">—</span>)</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="optGk" checked />
+            <span>Учитывать игру в воротах (сумма вратарских оценок тоже выравнивается)</span>
+          </label>
+        </div>
+
+        <button class="btn primary big" id="btnBalance" type="button">Распределить</button>
+      </div>
+
+      <div id="resultWrap"></div>
+    </section>
+
+    <!-- ================= НАСТРОЙКИ ================= -->
+    <section class="view" id="view-settings" hidden>
+      <div class="card">
+        <div class="card-head"><h2>Шкала и скилы</h2></div>
+        <p class="muted small">Все оценки — <b>1–10</b>, допускаются половинки (7.5). Если в таблице числа из FIFA (0–99), они автоматически поделятся на 10.</p>
+        <div class="skillref">
+          <div>
+            <h3>Поле (6)</h3>
+            <ul>
+              <li><b>Скорость</b> — рывки, игра в отрыв</li>
+              <li><b>Удар</b> — завершение, дальние</li>
+              <li><b>Пас</b> — передачи, видение</li>
+              <li><b>Дриблинг</b> — контроль, обыгрыш</li>
+              <li><b>Защита</b> — отбор, чтение игры</li>
+              <li><b>Физика</b> — сила, выносливость</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Ворота (5)</h3>
+            <ul>
+              <li><b>Бросок</b> — игра в падении</li>
+              <li><b>Руки</b> — надёжность хвата</li>
+              <li><b>Вынос</b> — удар от ворот</li>
+              <li><b>Реакция</b> — сейвы в упор</li>
+              <li><b>Позиция</b> — выбор места</li>
+            </ul>
+          </div>
+        </div>
+        <p class="muted small">Скилы заполняются <b>всем</b> — вратарём может встать любой, позиции в игре меняются. Поэтому у каждого игрока две оценки: «в поле» и «в воротах».</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Данные</h2></div>
+        <div class="row wrap">
+          <button class="btn" id="btnExport" type="button">Экспорт JSON</button>
+          <button class="btn" id="btnImport" type="button">Импорт JSON</button>
+          <button class="btn danger" id="btnClear" type="button">Очистить состав</button>
+        </div>
+        <input type="file" id="fileImport" accept="application/json,.json" hidden />
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Как заполнять таблицу</h2></div>
+        <p class="muted small">Лист, например <code>Players</code>. Первая строка — шапка. Нужны имя и скилы; колонка «Позиция» не требуется. Пустые скилы считаются «средними по компании».</p>
+        <div class="tablewrap">
+          <table class="ref-table">
+            <thead><tr><th>Имя</th><th>PAC</th><th>SHO</th><th>PAS</th><th>DRI</th><th>DEF</th><th>PHY</th><th>DIV</th><th>HAN</th><th>KIC</th><th>REF</th><th>POS</th></tr></thead>
+            <tbody>
+              <tr><td>Миша</td><td>6</td><td>4.5</td><td>6</td><td>6</td><td>5</td><td>6</td><td>7</td><td>7.5</td><td>6</td><td>8</td><td>7</td></tr>
+              <tr><td>Андрей</td><td>6</td><td>4</td><td>6</td><td>5</td><td>8</td><td>7</td><td>4.5</td><td>5</td><td>6</td><td>5.5</td><td>5</td></tr>
+              <tr><td>Костя</td><td>9</td><td>8</td><td>5</td><td>8</td><td>3</td><td>4</td><td>4</td><td>4.5</td><td>5.5</td><td>5</td><td>4.5</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted small">Шапка понимает и русские названия: Скорость, Удар, Пас, Дриблинг, Защита, Физика, Бросок, Руки, Вынос, Реакция, Позиционирование.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Установка на телефон</h2></div>
+        <p class="muted small"><b>iPhone:</b> Safari → «Поделиться» → «На экран “Домой”».<br /><b>Android:</b> Chrome → меню ⋮ → «Установить приложение».</p>
+        <p class="muted small" id="swState"></p>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar" id="tabbar">
+    <button type="button" data-view="players" class="on"><span>👥</span>Состав</button>
+    <button type="button" data-view="teams"><span>⚖️</span>Команды</button>
+    <button type="button" data-view="settings"><span>⚙️</span>Настройки</button>
+  </nav>
+</div>
+
+<!-- ================= дialog: игрок ================= -->
+<dialog id="dlgPlayer" class="sheet">
+  <form id="playerForm" method="dialog">
+    <div class="sheet-head">
+      <h2 id="dlgPlayerTitle">Новый игрок</h2>
+      <button class="btn ghost icon" type="button" data-close>✕</button>
+    </div>
+
+    <label class="field">
+      <span>Имя</span>
+      <input id="pName" type="text" required maxlength="40" placeholder="Как зовут" />
+    </label>
+
+    <div class="skill-section">
+      <h3>В поле</h3>
+      <div class="skills-grid" id="fieldSkills">
+        <label><span>Скорость</span><input data-skill="pac" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Удар</span><input data-skill="sho" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Пас</span><input data-skill="pas" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Дриблинг</span><input data-skill="dri" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Защита</span><input data-skill="def" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Физика</span><input data-skill="phy" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+      </div>
+    </div>
+
+    <div class="skill-section">
+      <h3>В воротах</h3>
+      <div class="skills-grid" id="gkSkills">
+        <label><span>Бросок</span><input data-gk="div" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Руки</span><input data-gk="han" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Вынос</span><input data-gk="kic" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Реакция</span><input data-gk="ref" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Позиция</span><input data-gk="gkpos" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+      </div>
+    </div>
+
+    <p class="hint" id="overallPreview"></p>
+
+    <div class="sheet-actions">
+      <button class="btn danger ghost" type="button" id="btnDeletePlayer">Удалить</button>
+      <button class="btn primary" type="submit">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ================= dialog: CSV ================= -->
+<dialog id="dlgPaste" class="sheet">
+  <form id="pasteForm" method="dialog">
+    <div class="sheet-head">
+      <h2>Вставить CSV</h2>
+      <button class="btn ghost icon" type="button" data-close>✕</button>
+    </div>
+    <p class="hint">Скопируйте диапазон из таблицы (с шапкой) или вставьте CSV из файла.</p>
+    <textarea id="pasteArea" rows="10" placeholder="Имя,Позиция,PAC,SHO,PAS,DRI,DEF,PHY&#10;Миша,GK,,,,,,&#10;Андрей,DEF,6,4,6,5,8,7"></textarea>
+    <div class="sheet-actions">
+      <button class="btn ghost" type="button" data-close>Отмена</button>
+      <button class="btn primary" type="submit">Разобрать</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
