@@ -13,6 +13,9 @@ const GK_KEYS = ['ref', 'gkpos'];
 /* Насколько вратарская игра весит при балансировке (0 — не учитывать). */
 const GK_WEIGHT = 0.6;
 
+/* Вес корзин (ярусов). Меньше 1000 — суммы важнее, корзины решают при равенстве. */
+const POT_WEIGHT = 60;
+
 const TEAM_META = [
   { name: 'Синие', color: '#38bdf8' },
   { name: 'Красные', color: '#fb7185' },
@@ -239,30 +242,54 @@ function scoreOf(teams, ctx) {
     const gkSums = teams.map((t) => sum(t.map((p) => p.gk)));
     s += 1000 * GK_WEIGHT * (Math.max.apply(null, gkSums) - Math.min.apply(null, gkSums));
   }
+
+  // Корзины: ярусы нарезаны с шагом «число команд», поэтому в идеале
+  // в каждой команде ровно по одному игроку из яруса.
+  if (ctx.pots && ctx.bandCount) {
+    for (let b = 0; b < ctx.bandCount; b++) {
+      const counts = teams.map((t) => t.filter((p) => p.band === b).length);
+      const sizeInBand = sum(counts);
+
+      // верхняя корзина — жёстко не больше одного «топа» в команде
+      if (b === 0) {
+        s += 5000 * sum(counts.map((c) => Math.max(0, c - 1)));
+        continue;
+      }
+
+      const maxC = Math.max.apply(null, counts);
+      const minC = Math.min.apply(null, counts);
+      const unavoidable = sizeInBand % teams.length === 0 ? 0 : 1;
+      s += ctx.potWeight * Math.max(0, (maxC - minC) - unavoidable);
+    }
+  }
   return s;
 }
 
 function greedyAssign(players, k, sizes, ctx, jitter) {
-  const keyed = players.map((p) => ({
-    p,
-    key: p.field + (jitter ? (Math.random() - 0.5) * 1.8 : 0),
-  }));
-  keyed.sort((a, b) => b.key - a.key);
+  // Сначала раскладываем по ярусам (корзинам), внутри яруса — по силе.
+  // Так каждая команда с самого начала получает по одному игроку из корзины.
+  const noisy = players.map((p) => ({ p, r: jitter ? Math.random() : 0 }));
+  noisy.sort((a, b) => (a.p.band - b.p.band) || (b.p.field - a.p.field) || (a.r - b.r));
 
   const teams = Array.from({ length: k }, () => []);
   const sums = new Array(k).fill(0);
+  let band = -1;
+  let offset = 0;
 
-  for (const item of keyed) {
+  for (const item of noisy) {
     const p = item.p;
-    const avail = [];
-    for (let i = 0; i < k; i++) if (teams[i].length < sizes[i]) avail.push(i);
-    if (!avail.length) break;
+    if (p.band !== band) { band = p.band; offset = band % k; }
 
-    let best = avail[0];
+    let best = -1;
     let bestVal = Infinity;
-    for (const i of avail) {
-      if (sums[i] < bestVal) { bestVal = sums[i]; best = i; }
+    for (let step = 0; step < k; step++) {
+      const i = (offset + step) % k;
+      if (teams[i].length >= sizes[i]) continue;
+      const inBand = teams[i].filter((x) => x.band === band).length;
+      const val = inBand * 100 + sums[i];
+      if (val < bestVal) { bestVal = val; best = i; }
     }
+    if (best < 0) continue;
     teams[best].push(p);
     sums[best] += p.field;
   }
@@ -305,7 +332,17 @@ function balance(players, k, opts) {
   const n = list.length;
   if (n < k) return { error: 'Игроков с оценками меньше, чем команд.' };
 
-  const ctx = { useGk: opts.useGk !== false };
+  const ctx = {
+    useGk: opts.useGk !== false,
+    pots: opts.pots !== false,
+    potWeight: opts.potWeight != null ? opts.potWeight : POT_WEIGHT,
+  };
+
+  // ярусы (корзины): шаг = число команд, чтобы в каждой команде был один игрок из яруса
+  const byRank = list.slice().sort((a, b) => b.field - a.field);
+  byRank.forEach((p, i) => { p.band = Math.floor(i / k); });
+  ctx.bandCount = n ? Math.floor((n - 1) / k) + 1 : 0;
+
   const base = Math.floor(n / k);
   const rem = n % k;
   const sizes = Array.from({ length: k }, (_, i) => base + (i < rem ? 1 : 0));
@@ -361,6 +398,7 @@ function balance(players, k, opts) {
     gkDiff: Math.max.apply(null, gkSums) - Math.min.apply(null, gkSums),
     excluded: players.filter((p) => !p.rated),
     useGk: ctx.useGk,
+    pots: ctx.pots,
     exact: usedExact,
   };
 }
@@ -524,7 +562,7 @@ const blankState = () => ({
   attUrl: '',
   attendance: null,
   teamCount: 3,
-  opts: { useGk: true, onlyGoing: false },
+  opts: { useGk: true, onlyGoing: false, pots: true },
 });
 
 let state = blankState();
@@ -559,6 +597,7 @@ function loadState() {
       opts: {
         useGk: data.opts ? data.opts.useGk !== false : true,
         onlyGoing: data.opts ? data.opts.onlyGoing === true : false,
+        pots: data.opts ? data.opts.pots !== false : true,
       },
     };
   } catch (e) {
@@ -798,7 +837,7 @@ function teamCard(team, idx) {
   const keeper = bestKeeper(team);
 
   const rows = team.slice().sort((a, b) => b.field - a.field).map((p) =>
-    '<li><span class="lname">' + esc(p.name) + '</span>' +
+    '<li><span class="lname">' + esc(p.name) + (state.opts.pots && p.band === 0 ? ' <b class="star">★</b>' : '') + '</span>' +
     '<span class="lov">' + fmt(p.field) + '</span>' +
     '<span class="lov gk">' + fmt(p.gk) + '</span></li>').join('');
 
@@ -849,8 +888,11 @@ function renderResult(result) {
         : ''));
   }
   if (sizeGap) {
-    notes.push('Команды разного размера (' + sizesArr.join(' и ') +
+    notes.push('Команды разного размера (' + sizesArr.join(' / ') +
       ') — в меньшей команде игроки сильнее: это компенсация за меньшее число игроков.');
+  }
+  if (result.pots) {
+    notes.push('Корзины: в каждой команде не больше одного игрока из верхней корзины (отмечены ★).');
   }
   notes.push(result.useGk
     ? 'Разница в рамке: ' + fmt(result.gkDiff)
@@ -900,6 +942,7 @@ function doBalance(reroll) {
 
   const result = balance(eligible, state.teamCount, {
     useGk: state.opts.useGk,
+    pots: state.opts.pots,
     exact: !reroll,
   });
   result.skipped = applied.skipped;
@@ -1026,6 +1069,9 @@ function syncTeamControls() {
     b.classList.toggle('on', Number(b.dataset.teams) === state.teamCount);
   }
   $('#optGk').checked = state.opts.useGk;
+
+  const pots = $('#optPots');
+  if (pots) pots.checked = state.opts.pots;
 
   const only = $('#optOnlyGoing');
   if (only) {
@@ -1237,6 +1283,11 @@ function init() {
 
   $('#optOnlyGoing').addEventListener('change', (e) => {
     state.opts.onlyGoing = e.target.checked;
+    saveState();
+  });
+
+  $('#optPots').addEventListener('change', (e) => {
+    state.opts.pots = e.target.checked;
     saveState();
   });
 
