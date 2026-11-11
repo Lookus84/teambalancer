@@ -475,9 +475,90 @@ function isGoingAnswer(text) {
   return null;
 }
 
-/** Строки листа ответов → { dateKey, dateLabel, going, notGoing, unknown } */
+/** Отметка в ячейке листа явки: «+», «да», «иду» — придёт; «-», «нет» — не придёт. */
+function attendanceMark(value) {
+  const s = String(value == null ? '' : value).trim().toLowerCase().replace(/ё/g, 'е');
+  if (!s) return null;
+  if (s === '-' || s === '−' || s === '—') return false;
+  if (/^(нет|не|н|no|n|0|пас|не приду|не смогу|не буду)$/.test(s)) return false;
+  if (/^(\+|да|y|yes|true|1|иду|буду|приду|ок|ok|✓|✔|✅)$/.test(s)) return true;
+  if (s.indexOf('+') >= 0) return true;
+  if (/не\s|нет/.test(s)) return false;
+  if (/приду|буду|иду|да/.test(s)) return true;
+  return null;
+}
+
+/** Матрица «игроки × даты игр» → { dateKey, dateLabel, going, notGoing, marked } */
+function parseAttendanceMatrix(rows) {
+  if (!rows || rows.length < 2) return null;
+
+  let headerIdx = -1;
+  let nameCol = 0;
+  let dateCols = [];
+
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    const cols = [];
+    let nm = -1;
+    (rows[i] || []).forEach((cellValue, idx) => {
+      const date = parseGameDate(cellValue);
+      if (date) cols.push({ idx: idx, date: date });
+      else if (nm < 0 && /^(имя|фио|игрок|name|player|ник)$/i.test(String(cellValue).trim())) nm = idx;
+    });
+    if (cols.length >= 2) { headerIdx = i; dateCols = cols; nameCol = nm >= 0 ? nm : 0; break; }
+  }
+  if (headerIdx < 0) return null;
+
+  const now = new Date();
+  const todayKey = now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+
+  const upcoming = dateCols.filter((c) => c.date.key >= todayKey);
+  let chosen = upcoming.length ? upcoming[0] : null;
+
+  if (!chosen) {
+    // все даты в прошлом — берём последнюю, где есть хоть одна отметка
+    for (let i = dateCols.length - 1; i >= 0; i--) {
+      const col = dateCols[i];
+      const has = rows.slice(headerIdx + 1).some((r) => attendanceMark(cell(r, col.idx)) != null);
+      if (has) { chosen = col; break; }
+    }
+    if (!chosen) chosen = dateCols[dateCols.length - 1];
+  }
+
+  const going = [];
+  const notGoing = [];
+  const marked = [];
+
+  for (let r = headerIdx + 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const name = String(cell(row, nameCol)).trim();
+    if (!name) continue;
+    const mark = attendanceMark(cell(row, chosen.idx));
+    if (mark === null) continue;
+    marked.push(name);
+    (mark ? going : notGoing).push(name);
+  }
+
+  return {
+    dateKey: chosen.date.key,
+    dateLabel: chosen.date.label,
+    dates: dateCols.map((c) => c.date.label),
+    going: going,
+    notGoing: notGoing,
+    marked: marked,
+    answersTotal: marked.length,
+    format: 'matrix',
+  };
+}
+
+/** Строки листа ответов → { dateKey, dateLabel, going, notGoing } */
 function parseAttendance(rows) {
   if (!rows || !rows.length) return { error: 'Лист ответов пуст.' };
+
+  // формат «игроки × даты» — его и использует команда
+  const matrix = parseAttendanceMatrix(rows);
+  if (matrix) return matrix;
 
   let headerIdx = -1;
   let cols = null;
@@ -540,6 +621,13 @@ function parseAttendance(rows) {
 function attendanceGoingSet() {
   if (!state.attendance) return null;
   return new Set(state.attendance.going.map(normalizeName));
+}
+
+/** Сколько подтвердивших явку реально есть в составе (имена из листа могут не совпасть). */
+function goingInRoster() {
+  const set = attendanceGoingSet();
+  if (!set) return 0;
+  return prepare(state.players).filter((p) => set.has(normalizeName(p.name))).length;
 }
 
 /** Отбирает только подтвердивших явку, если включён соответствующий тумблер. */
@@ -812,7 +900,8 @@ function renderAttendance() {
   const coming = ready.filter((p) => goingSet.has(normalizeName(p.name)));
   const declined = ready.filter((p) => !goingSet.has(normalizeName(p.name)) && notGoingSet.has(normalizeName(p.name)));
   const noAnswer = ready.filter((p) => !goingSet.has(normalizeName(p.name)) && !notGoingSet.has(normalizeName(p.name)));
-  const unmatched = att.going.filter((n) => !ready.some((p) => normalizeName(p.name) === normalizeName(n)));
+  const attNames = (att.going || []).concat(att.notGoing || []);
+  const unmatched = attNames.filter((n) => !ready.some((p) => normalizeName(p.name) === normalizeName(n)));
 
   pill.textContent = 'игра ' + att.dateLabel;
   pill.className = 'pill ok';
@@ -1121,7 +1210,7 @@ function syncTeamControls() {
     only.checked = state.opts.onlyGoing;
     only.disabled = !state.attendance;
     const cnt = $('#goingCount');
-    if (cnt) cnt.textContent = state.attendance ? String(state.attendance.going.length) : '—';
+    if (cnt) cnt.textContent = state.attendance ? String(goingInRoster()) : '—';
   }
 }
 
@@ -1295,9 +1384,12 @@ function init() {
         dateLabel: parsed.dateLabel,
         going: parsed.going,
         notGoing: parsed.notGoing,
+        marked: Array.isArray(parsed.marked) ? parsed.marked : [],
+        format: parsed.format || 'form',
       };
       state.attUrl = url;
-      state.opts.onlyGoing = true;
+      // если ещё никто не отметился, фильтр не включаем — иначе распределять некого
+      state.opts.onlyGoing = parsed.going.length > 0;
       saveState();
       renderAttendance();
       syncTeamControls();
@@ -1305,7 +1397,9 @@ function init() {
       renderHeaderState();
       lastResult = null;
       $('#resultWrap').innerHTML = '';
-      toast('Игра ' + parsed.dateLabel + ': придут ' + parsed.going.length, 'ok');
+      toast(parsed.going.length
+        ? 'Игра ' + parsed.dateLabel + ': придут ' + parsed.going.length
+        : 'Игра ' + parsed.dateLabel + ': отметок пока нет', 'ok');
     } catch (err) {
       const msg = err && err.message ? err.message : 'Не получилось загрузить явку';
       toast(/fetch|network|Failed/i.test(msg)
