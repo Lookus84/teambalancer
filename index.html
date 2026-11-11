@@ -69,7 +69,10 @@
       <div class="card">
         <div class="card-head">
           <h2>Игроки <span class="count" id="playerCount">0</span></h2>
-          <button class="btn ghost" id="btnAdd" type="button">+ игрок</button>
+          <div class="head-actions">
+            <button class="btn ghost" id="btnQuick" type="button">Быстрая оценка</button>
+            <button class="btn ghost" id="btnAdd" type="button">+ игрок</button>
+          </div>
         </div>
         <div class="stats" id="rosterStats"></div>
         <div class="players" id="playersList"></div>
@@ -235,6 +238,26 @@
     <div class="sheet-actions">
       <button class="btn ghost" type="button" data-close>Отмена</button>
       <button class="btn primary" type="submit">Разобрать</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ================= dialog: быстрая оценка ================= -->
+<dialog id="dlgQuick" class="sheet">
+  <form id="quickForm" method="dialog" novalidate>
+    <div class="sheet-head">
+      <h2>Быстрая оценка</h2>
+      <button class="btn ghost icon" type="button" data-close>✕</button>
+    </div>
+    <p class="hint">Два числа на игрока: сила <b>в поле</b> и <b>в воротах</b>. Скилы станут ровными —
+      6 полевых равны «в поле», 2 вратарских равны «в воротах». Пустое поле — не трогать.</p>
+    <div class="quick-head">
+      <span>Игрок</span><span>поле</span><span>ворота</span>
+    </div>
+    <div id="quickList" class="quick-list"></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" type="button" data-close>Отмена</button>
+      <button class="btn primary" type="submit">Применить</button>
     </div>
   </form>
 </dialog>

@@ -775,7 +775,7 @@ function renderPlayers() {
     const note = playerNote(p);
     return '<div class="player" data-id="' + esc(p.id) + '">' +
       '<div class="p-main"><div class="p-name">' + esc(p.name) + '</div>' +
-      '<div class="p-sub">' + esc(note) + '</div></div>' +
+      (note ? '<div class="p-sub">' + esc(note) + '</div>' : '') + '</div>' +
       '<span class="ov' + (p.rated ? '' : ' none') + '">' + (p.rated ? fmt(p.field) : '—') + '</span>' +
       '<span class="ov gk' + (p.rated ? '' : ' none') + '">' + (p.rated ? fmt(p.gk) : '—') + '</span>' +
       '</div>';
@@ -1006,6 +1006,49 @@ function mergePlayers(incoming) {
   return { added, updated };
 }
 
+/* ---------- быстрая оценка ---------- */
+
+function openQuickDialog() {
+  const ready = prepare(state.players);
+  if (!ready.length) { toast('Сначала загрузите состав', 'err'); return; }
+
+  const rows = ready.slice()
+    .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    .map((p) =>
+      '<div class="q-row" data-id="' + esc(p.id) + '">' +
+      '<span class="q-name">' + esc(p.name) + '</span>' +
+      '<input class="q-in" data-kind="field" type="number" inputmode="decimal" min="1" max="10" step="any" value="' +
+        (p.rated ? p.field.toFixed(1) : '') + '" />' +
+      '<input class="q-in" data-kind="gk" type="number" inputmode="decimal" min="1" max="10" step="any" value="' +
+        (p.rated ? p.gk.toFixed(1) : '') + '" />' +
+      '</div>').join('');
+
+  $('#quickList').innerHTML = rows;
+  const dlg = $('#dlgQuick');
+  if (!dlg.open) dlg.showModal();
+}
+
+function applyQuickDialog() {
+  let changed = 0;
+  for (const row of $$('#quickList .q-row')) {
+    const p = state.players.find((x) => x.id === row.dataset.id);
+    if (!p) continue;
+    const fv = num(row.querySelector('[data-kind="field"]').value);
+    const gv = num(row.querySelector('[data-kind="gk"]').value);
+    if (fv == null && gv == null) continue;
+    if (fv != null) for (const k of FIELD_KEYS) p.skills[k] = fv;
+    if (gv != null) for (const k of GK_KEYS) p.gk[k] = gv;
+    changed++;
+  }
+  if (!changed) { toast('Нечего применять', 'err'); return; }
+
+  saveState();
+  renderPlayers();
+  renderHeaderState();
+  $('#dlgQuick').close();
+  toast('Оценено игроков: ' + changed, 'ok');
+}
+
 /* ---------- диалог игрока ---------- */
 
 function readPlayerForm() {
@@ -1147,6 +1190,12 @@ function init() {
 
   /* --- список игроков --- */
   $('#btnAdd').addEventListener('click', () => openPlayerDialog(null));
+
+  $('#btnQuick').addEventListener('click', openQuickDialog);
+  $('#quickForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    applyQuickDialog();
+  });
 
   $('#playersList').addEventListener('click', (e) => {
     const row = e.target.closest('.player');

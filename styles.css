@@ -534,3 +534,35 @@ dialog.sheet form { padding: 16px; }
   .brand-text h1 { font-size: 19px; }
   .skills-grid { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ---------------- быстрая оценка ---------------- */
+.head-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+.quick-head,
+.q-row {
+  display: grid;
+  grid-template-columns: 1fr 62px 62px;
+  gap: 8px;
+  align-items: center;
+}
+
+.quick-head {
+  font-size: 10.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 0 2px 6px;
+}
+.quick-head span:not(:first-child) { text-align: center; }
+
+.quick-list { max-height: 52vh; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+
+.q-row { padding: 3px 0; }
+.q-name { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-in {
+  width: 100%;
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
