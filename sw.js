@@ -1,5 +1,5 @@
 /* Кэш оболочки приложения. Google-таблицу не кэшируем — она всегда живая. */
-const CACHE = 'teambalancer-v11';
+const CACHE = 'teambalancer-v12';
 const ASSETS = [
   './',
   './index.html',
@@ -29,30 +29,17 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // таблица — только сеть
 
-  // Навигация: сеть, при офлайне — из кэша.
-  if (req.mode === 'navigate') {
-    e.respondWith(
-      fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
-        return res;
-      }).catch(() => caches.match('./index.html'))
-    );
-    return;
-  }
-
-  // Ассеты: отдаём из кэша сразу и обновляем в фоне (stale-while-revalidate),
-  // чтобы новая версия подхватывалась без ручной чистки кэша.
+  // Сеть в приоритете: свежая версия приложения доезжает сразу, а не «на следующем заходе».
+  // Когда сети нет — отдаём из кэша, приложение продолжает работать офлайн.
   e.respondWith(
-    caches.match(req).then((hit) => {
-      const network = fetch(req).then((res) => {
+    fetch(req)
+      .then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         }
         return res;
-      }).catch(() => hit);
-      return hit || network;
-    })
+      })
+      .catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
   );
 });

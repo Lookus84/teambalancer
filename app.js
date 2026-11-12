@@ -23,6 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
+const APP_VERSION = '12';
 
 /* ======================================================================
    Мелкие утилиты
@@ -571,7 +572,18 @@ function parseAttendance(rows) {
     if (found.player != null && found.answer != null) { headerIdx = i; cols = found; break; }
   }
   if (!cols) {
-    return { error: 'В листе ответов не нашёл колонок «Игрок» и «Приду».' };
+    // частая ошибка: в поле явки вставили ссылку на лист состава
+    const header = (rows[0] || []).map((v) => String(v).toLowerCase());
+    const looksLikeRoster = header.some((h) => /скорость|защита|дриблинг|удар|реакция/.test(h));
+    if (looksLikeRoster) {
+      return {
+        error: 'Это лист состава, а не явки. Откройте вкладку с датами игр и скопируйте ссылку с #gid=…',
+      };
+    }
+    return {
+      error: 'Не понял формат листа. Нужен лист «игроки × даты игр» (в ячейке + или −) ' +
+        'либо ответы Google Формы.',
+    };
   }
 
   const records = [];
@@ -1492,12 +1504,22 @@ function init() {
   /* --- сервис-воркер --- */
   const swEl = $('#swState');
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
     navigator.serviceWorker.register('sw.js')
       .then(() => { if (swEl) swEl.textContent = 'Офлайн-режим включён.'; })
       .catch(() => { if (swEl) swEl.textContent = 'Офлайн-режим недоступен (открыто без сервера).'; });
   } else if (swEl) {
     swEl.textContent = 'Офлайн-режим работает только при открытии по http(s).';
   }
+
+  const verEl = $('#appVersion');
+  if (verEl) verEl.textContent = 'Версия ' + APP_VERSION + ' · обновляется само при наличии интернета';
 
   renderPlayers();
   renderHeaderState();
