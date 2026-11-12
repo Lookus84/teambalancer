@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '13';
+const APP_VERSION = '14';
 
 /* ======================================================================
    Мелкие утилиты
@@ -822,7 +822,9 @@ function showView(name) {
   if (!target) { toast('Нет экрана ' + name, 'err'); return; }
 
   for (const v of $$('.view')) v.hidden = v !== target;
-  for (const b of $$('#tabbar button')) b.classList.toggle('on', b.dataset.view === name);
+  for (const b of $$('#tabbar button, #viewswitch button')) {
+    b.classList.toggle('on', b.dataset.view === name);
+  }
   window.scrollTo(0, 0);
 }
 
@@ -1235,7 +1237,7 @@ function init() {
   loadState();
 
   /* --- вкладки --- */
-  $('#tabbar').addEventListener('click', (e) => {
+  const switchView = (e) => {
     const b = e.target.closest('button[data-view]');
     if (!b) return;
     try {
@@ -1243,7 +1245,9 @@ function init() {
     } catch (err) {
       toast('Не открылось: ' + (err && err.message ? err.message : 'ошибка'), 'err');
     }
-  });
+  };
+  $('#tabbar').addEventListener('click', switchView);
+  $('#viewswitch').addEventListener('click', switchView);
 
   /* --- источник --- */
   $('#sheetUrl').value = state.url || '';
