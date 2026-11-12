@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
-<link rel="stylesheet" href="styles.css?v=21" />
+<link rel="stylesheet" href="styles.css?v=23" />
 </head>
 <body>
 <div class="app">
@@ -135,7 +135,7 @@
         <p class="muted small">Все оценки — <b>1–10</b>, допускаются половинки (7.5). Если в таблице числа из FIFA (0–99), они автоматически поделятся на 10.</p>
         <div class="skillref">
           <div>
-            <h3>Поле (6)</h3>
+            <h3>Поле (7)</h3>
             <ul>
               <li><b>Скорость</b> — рывки, игра в отрыв</li>
               <li><b>Удар</b> — завершение, дальние</li>
@@ -143,13 +143,13 @@
               <li><b>Дриблинг</b> — контроль, обыгрыш</li>
               <li><b>Защита</b> — отбор, чтение игры</li>
               <li><b>Физика</b> — сила, выносливость</li>
+              <li><b>Позиционирование</b> — выбор позиции в поле, игра на опережение</li>
             </ul>
           </div>
           <div>
-            <h3>Ворота (2)</h3>
+            <h3>Ворота (1)</h3>
             <ul>
-              <li><b>Реакция</b> — сейвы в упор</li>
-              <li><b>Позиционирование</b> — выбор места, игра на выходах</li>
+              <li><b>Реакция</b> — сейвы в упор, игра в рамке</li>
             </ul>
           </div>
         </div>
@@ -174,8 +174,8 @@
             <thead><tr><th>Имя</th><th>PAC</th><th>SHO</th><th>PAS</th><th>DRI</th><th>DEF</th><th>PHY</th><th>REF</th><th>POS</th></tr></thead>
             <tbody>
               <tr><td>Миша</td><td>6</td><td>4.5</td><td>6</td><td>6</td><td>5</td><td>6</td><td>8</td><td>7</td></tr>
-              <tr><td>Андрей</td><td>6</td><td>4</td><td>6</td><td>5</td><td>8</td><td>7</td><td>5.5</td><td>5</td></tr>
-              <tr><td>Костя</td><td>9</td><td>8</td><td>5</td><td>8</td><td>3</td><td>4</td><td>5</td><td>4.5</td></tr>
+              <tr><td>Андрей</td><td>6</td><td>4</td><td>6</td><td>5</td><td>8</td><td>7</td><td>5.5</td><td>7</td></tr>
+              <tr><td>Костя</td><td>9</td><td>8</td><td>5</td><td>8</td><td>3</td><td>4</td><td>5</td><td>6</td></tr>
             </tbody>
           </table>
         </div>
@@ -224,6 +224,7 @@
         <label><span>Дриблинг</span><input data-skill="dri" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
         <label><span>Защита</span><input data-skill="def" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
         <label><span>Физика</span><input data-skill="phy" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
+        <label><span>Позиционирование</span><input data-skill="pos" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
       </div>
     </div>
 
@@ -231,7 +232,6 @@
       <h3>В воротах</h3>
       <div class="skills-grid" id="gkSkills">
         <label><span>Реакция</span><input data-gk="ref" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
-        <label><span>Позиционирование</span><input data-gk="gkpos" type="number" inputmode="decimal" min="1" max="10" step="0.5" /></label>
       </div>
     </div>
 
@@ -301,6 +301,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>
