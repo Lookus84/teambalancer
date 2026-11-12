@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '12';
+const APP_VERSION = '13';
 
 /* ======================================================================
    Мелкие утилиты
@@ -816,7 +816,12 @@ function toast(msg, kind) {
    ====================================================================== */
 
 function showView(name) {
-  for (const v of $$('.view')) v.hidden = v.id !== 'view-' + name;
+  for (const dlg of $$('dialog')) if (dlg.open) dlg.close();
+
+  const target = $('#view-' + name);
+  if (!target) { toast('Нет экрана ' + name, 'err'); return; }
+
+  for (const v of $$('.view')) v.hidden = v !== target;
   for (const b of $$('#tabbar button')) b.classList.toggle('on', b.dataset.view === name);
   window.scrollTo(0, 0);
 }
@@ -828,9 +833,9 @@ function renderHeaderState() {
   const pill = $('#srcState');
   pill.textContent = n ? n + ' игроков' : 'не подключено';
   pill.className = 'pill' + (n ? ' ok' : '');
-  $('#subtitle').textContent = n
-    ? n + ' игроков · ' + full + ' с полными скилами · шкала 1–10'
-    : 'Игроков нет — загрузи таблицу';
+  $('#subtitle').textContent = (n
+    ? n + ' игроков · ' + full + ' с полными скилами'
+    : 'Игроков нет — загрузи таблицу') + ' · v' + APP_VERSION;
   const ready = $('#teamsReady');
   ready.textContent = n ? n + ' в составе' : '—';
   ready.className = 'pill' + (n ? ' ok' : '');
@@ -1232,7 +1237,12 @@ function init() {
   /* --- вкладки --- */
   $('#tabbar').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-view]');
-    if (b) showView(b.dataset.view);
+    if (!b) return;
+    try {
+      showView(b.dataset.view);
+    } catch (err) {
+      toast('Не открылось: ' + (err && err.message ? err.message : 'ошибка'), 'err');
+    }
   });
 
   /* --- источник --- */
