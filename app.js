@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '23';
+const APP_VERSION = '24';
 
 /* ======================================================================
    Мелкие утилиты
@@ -458,7 +458,7 @@ function parseGameDate(value) {
   if (!y) y = new Date().getFullYear();
   const key = y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
   const label = String(d).padStart(2, '0') + '.' + String(m).padStart(2, '0') + '.' + y;
-  return { key, label };
+  return { key, label, raw };
 }
 
 /** «Иван П.» и «иван п» → «иванп» */
@@ -552,7 +552,7 @@ function parseAttendanceMatrix(rows) {
 
   return {
     dateKey: chosen.date.key,
-    dateLabel: chosen.date.label,
+    dateLabel: chosen.date.raw || chosen.date.label,
     dates: dateCols.map((c) => c.date.label),
     going: going,
     notGoing: notGoing,
