@@ -1,5 +1,5 @@
 /* Кэш оболочки приложения. Google-таблицу не кэшируем — она всегда живая. */
-const CACHE = 'teambalancer-v17';
+const CACHE = 'teambalancer-v18';
 const ASSETS = [
   './',
   './index.html',

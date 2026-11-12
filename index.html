@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
-<link rel="stylesheet" href="styles.css?v=17" />
+<link rel="stylesheet" href="styles.css?v=18" />
 </head>
 <body>
 <div class="app">
@@ -176,7 +176,9 @@
 
       <div class="card">
         <div class="card-head"><h2>Установка на телефон</h2></div>
-        <p class="muted small"><b>iPhone:</b> Safari → «Поделиться» → «На экран “Домой”».<br /><b>Android:</b> Chrome → меню ⋮ → «Установить приложение».</p>
+        <button class="btn primary" id="btnInstall" type="button" hidden>Установить приложение</button>
+        <p class="muted small"><b>iPhone:</b> только через Safari — «Поделиться» → «На экран “Домой”» (Chrome на iPhone не ставит веб-приложения).<br /><b>Android:</b> Chrome → меню ⋮ → «Установить приложение» или «Добавить на главный экран».</p>
+        <p class="muted small" id="installNote"></p>
         <p class="muted small" id="swState"></p>
         <p class="muted small" id="appVersion"></p>
       </div>
@@ -271,6 +273,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

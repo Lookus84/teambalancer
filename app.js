@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '17';
+const APP_VERSION = '18';
 
 /* ======================================================================
    Мелкие утилиты
@@ -1520,6 +1520,48 @@ function init() {
     };
     reader.readAsText(file);
     e.target.value = '';
+  });
+
+  /* --- установка приложения --- */
+  const installBtn = $('#btnInstall');
+  const installNote = $('#installNote');
+  let installEvent = null;
+
+  const isStandalone = () => {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      navigator.standalone === true;
+  };
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installEvent = e;
+    if (installBtn) installBtn.hidden = false;
+    if (installNote) installNote.textContent = '';
+  });
+
+  if (installBtn) {
+    if (isStandalone()) {
+      installBtn.hidden = true;
+      if (installNote) installNote.textContent = 'Приложение уже открыто как установленное.';
+    }
+    installBtn.addEventListener('click', async () => {
+      if (!installEvent) {
+        toast('Кнопка установки недоступна: откройте меню браузера', 'err');
+        return;
+      }
+      installEvent.prompt();
+      const choice = await installEvent.userChoice;
+      if (choice && choice.outcome === 'accepted') {
+        installBtn.hidden = true;
+        toast('Устанавливаем…', 'ok');
+      }
+      installEvent = null;
+    });
+  }
+
+  window.addEventListener('appinstalled', () => {
+    if (installBtn) installBtn.hidden = true;
+    toast('Приложение установлено', 'ok');
   });
 
   /* --- сервис-воркер --- */
