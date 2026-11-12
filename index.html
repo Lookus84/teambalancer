@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
-<link rel="stylesheet" href="styles.css?v=24" />
+<link rel="stylesheet" href="styles.css?v=25" />
 </head>
 <body>
 <div class="app">
@@ -30,6 +30,7 @@
   <div class="viewswitch" id="viewswitch">
     <button type="button" data-view="players" class="on">Состав</button>
     <button type="button" data-view="teams">Команды</button>
+    <button type="button" data-view="history">История</button>
     <button type="button" data-view="settings">Настройки</button>
   </div>
 
@@ -76,8 +77,12 @@
         <div class="row">
           <button class="btn primary" id="btnLoadAtt" type="button">Загрузить явку</button>
         </div>
+        <label class="field" id="attDateField" hidden>
+          <span>Дата игры для распределения</span>
+          <select id="attDate"></select>
+        </label>
         <div class="att-summary" id="attSummary" hidden></div>
-        <p class="hint">Лист: строки — игроки, колонки — даты игр. В ячейке «Играю» / «Не играю» (или «+» / «−»), пусто — человек не отвечал. Приложение берёт ближайшую дату и учитывает только «Играю».</p>
+        <p class="hint">Лист: строки — игроки, колонки — даты игр. В ячейке «Играю» / «Не играю» (или «+» / «−»), пусто — человек не отвечал. Дата берётся сама (ближайшая), но её можно сменить в списке выше. Учитываются только «Играю».</p>
       </div>
 
       <div class="card">
@@ -128,6 +133,37 @@
       <div id="resultWrap"></div>
     </section>
 
+    <!-- ================= ИСТОРИЯ ================= -->
+    <section class="view" id="view-history" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>История игр</h2>
+          <span class="pill" id="histState">пусто</span>
+        </div>
+        <label class="field">
+          <span>Ссылка на лист «История»</span>
+          <span class="url-row">
+            <input id="histUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                   placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=…#gid=…" />
+            <button class="btn icon-out" id="openHist" type="button"
+                    title="Открыть лист «История» в новой вкладке" aria-label="Открыть лист «История»">↗</button>
+          </span>
+        </label>
+        <label class="field">
+          <span>Адрес веб-приложения (запись в таблицу)</span>
+          <input id="scriptUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                 placeholder="https://script.google.com/macros/s/…/exec" />
+        </label>
+        <div class="row">
+          <button class="btn primary" id="btnLoadHist" type="button">Загрузить историю</button>
+        </div>
+        <p class="hint">Каждая игра — одна строка листа: дата, счёт и три состава. Кнопка «Сохранить игру» на экране «Команды» пишет строку сама, лист нужно только создать — как это сделать, см. «Настройки» → «История: как подключить».</p>
+      </div>
+
+      <div id="histList"></div>
+      <div id="histStats"></div>
+    </section>
+
     <!-- ================= НАСТРОЙКИ ================= -->
     <section class="view" id="view-settings" hidden>
       <div class="card">
@@ -167,6 +203,63 @@
       </div>
 
       <div class="card">
+        <div class="card-head"><h2>История: как подключить</h2></div>
+        <ol class="list">
+          <li>В таблице создай лист <code>История</code> (пустой — шапку поставит скрипт).</li>
+          <li>Меню <b>Расширения → Apps Script</b>, вставь код ниже, сохрани.</li>
+          <li><b>Развернуть → Новое развёртывание → тип «Веб-приложение»</b>: «Запуск от имени» — ты,
+              «У кого есть доступ» — <b>все</b>. Скопируй адрес, он кончается на <code>/exec</code>.</li>
+          <li>Вставь адрес в поле «Адрес веб-приложения» на экране «История».</li>
+          <li>Ссылку на лист «История» вставь там же — по ней приложение читает историю и статистику.</li>
+        </ol>
+        <pre class="codeblock" id="scriptCode">const SHEET = 'История';
+
+function doPost(e) {
+  const body = JSON.parse(e.postData.contents);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ss.getSheetByName(SHEET) || ss.insertSheet(SHEET);
+    if (sh.getLastRow() === 0) {
+      sh.appendRow(['ID', 'Дата', 'Команд', 'Итог', 'Синие', 'Красные', 'Белые', 'Обновлено']);
+    }
+    const id = String(body.id || '');
+    const ids = sh.getLastRow() &gt; 1
+      ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function (r) { return String(r[0]); })
+      : [];
+    const at = ids.indexOf(id);
+
+    if (body.action === 'delete') {
+      if (at &gt;= 0) sh.deleteRow(at + 2);
+      return json({ ok: true, deleted: at &gt;= 0 });
+    }
+
+    const row = [id, body.date || '', body.teamCount || 0, body.score || '',
+      body.teams[0] || '', body.teams[1] || '', body.teams[2] || '', new Date()];
+
+    if (at &gt;= 0) sh.getRange(at + 2, 1, 1, row.length).setValues([row]);
+    else sh.appendRow(row);
+    return json({ ok: true, updated: at &gt;= 0 });
+  } catch (err) {
+    return json({ ok: false, error: String(err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function json(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}</pre>
+        <div class="row">
+          <button class="btn" id="btnCopyScript" type="button">Скопировать код</button>
+        </div>
+        <p class="hint">Без скрипта игра всё равно сохраняется — на телефоне, с пометкой «не в таблице»
+           и кнопкой «Отправить в таблицу».</p>
+      </div>
+
+      <div class="card">
         <div class="card-head"><h2>Как заполнять таблицу</h2></div>
         <p class="muted small">Лист, например <code>Players</code>. Первая строка — шапка. Нужны имя и скилы; колонка «Позиция» не требуется. Пустые скилы считаются «средними по компании».</p>
         <div class="tablewrap">
@@ -198,6 +291,7 @@
   <nav class="tabbar" id="tabbar">
     <button type="button" data-view="players" class="on"><span>👥</span>Состав</button>
     <button type="button" data-view="teams"><span>⚖️</span>Команды</button>
+    <button type="button" data-view="history"><span>📜</span>История</button>
     <button type="button" data-view="settings"><span>⚙️</span>Настройки</button>
   </nav>
 </div>
@@ -280,6 +374,22 @@
   </form>
 </dialog>
 
+<!-- ================= dialog: счёт игры ================= -->
+<dialog id="dlgScore" class="sheet">
+  <form id="scoreForm" method="dialog" novalidate>
+    <div class="sheet-head">
+      <h2 id="scoreTitle">Счёт игры</h2>
+      <button class="btn ghost icon" type="button" data-close>✕</button>
+    </div>
+    <p class="hint" id="scoreNote"></p>
+    <div id="scoreRows"></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" type="button" data-close>Отмена</button>
+      <button class="btn primary" type="submit">Сохранить игру</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- ================= dialog: удаление приложения ================= -->
 <dialog id="dlgUninstall" class="sheet">
   <div class="sheet-head">
@@ -301,6 +411,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=24"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>

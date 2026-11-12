@@ -616,3 +616,106 @@ dialog.sheet form { padding: 16px; }
   background: rgba(34, 211, 238, .08);
 }
 .btn.icon-out:hover { background: rgba(34, 211, 238, .16); }
+
+/* ---------------- история игр ---------------- */
+.hist-item { padding-bottom: 14px; }
+.hist-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.hist-date { font-size: 15px; font-weight: 700; letter-spacing: -.2px; }
+
+.hist-team {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--tc, var(--accent));
+  border-radius: 12px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: rgba(255, 255, 255, .025);
+}
+.hist-team summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+.hist-team summary::-webkit-details-marker { display: none; }
+.hist-team summary i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tc, var(--accent));
+  flex: none;
+}
+.hs-meta {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.hist-players { margin-top: 8px; }
+.hist-p {
+  display: grid;
+  grid-template-columns: 1fr 42px 42px;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 12.5px;
+  border-top: 1px solid rgba(255, 255, 255, .05);
+}
+.hist-p:first-child { border-top: 0; }
+
+.stats-h {
+  font-size: 11px;
+  margin: 16px 0 6px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+}
+.stats-h:first-of-type { margin-top: 8px; }
+
+.codeblock {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(7, 11, 20, .8);
+  color: #cbd8ec;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* диалог счёта */
+.pair-row {
+  display: grid;
+  grid-template-columns: 1fr 52px 10px 52px;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 0;
+}
+.pair-names { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pair-colon { text-align: center; color: var(--muted); font-weight: 700; }
+.pair-in {
+  width: 100%;
+  padding: 9px 4px;
+  text-align: center;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 360px) {
+  .viewswitch button { font-size: 11.5px; padding: 8px 3px; }
+  .tabbar button { font-size: 10px; }
+}

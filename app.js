@@ -23,7 +23,10 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '24';
+const APP_VERSION = '25';
+
+/* Лист истории: колонки идут в этом порядке, по ним же читаем обратно. */
+const HIST_TEAM_COLS = [4, 5, 6];
 
 /* ======================================================================
    Мелкие утилиты
@@ -498,76 +501,108 @@ function attendanceMark(value) {
   return null;
 }
 
-/** Матрица «игроки × даты игр» → { dateKey, dateLabel, going, notGoing, marked } */
-function parseAttendanceMatrix(rows) {
+/** Матрица «игроки × даты игр» → { dateKey, dateLabel, going, notGoing, marked, columns }.
+    pickKey — дата, выбранная вручную (иначе берётся ближайшая не прошедшая). */
+function parseAttendanceMatrix(rows, pickKey) {
   if (!rows || rows.length < 2) return null;
 
   let headerIdx = -1;
   let nameCol = 0;
   let dateCols = [];
 
-  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+  // Строка данных тоже может содержать две даты (например, «отметка времени» + «дата игры»
+  // в листе ответов формы), поэтому шапку ищем отдельно и требуем, чтобы в ней не было отметок.
+  const rowInfo = (i) => {
     const cols = [];
     let nm = -1;
+    let marks = false;
     (rows[i] || []).forEach((cellValue, idx) => {
       const date = parseGameDate(cellValue);
       if (date) cols.push({ idx: idx, date: date });
       else if (nm < 0 && /^(имя|фио|игрок|name|player|ник)$/i.test(String(cellValue).trim())) nm = idx;
+      if (attendanceMark(cellValue) != null) marks = true;
     });
-    if (cols.length >= 2) { headerIdx = i; dateCols = cols; nameCol = nm >= 0 ? nm : 0; break; }
+    return { cols, nm, marks };
+  };
+
+  // 1) шапка с названием колонки имён
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    const info = rowInfo(i);
+    if (info.cols.length >= 2 && info.nm >= 0 && !info.marks) {
+      headerIdx = i; dateCols = info.cols; nameCol = info.nm; break;
+    }
+  }
+  // 2) шапка без названия колонки — считаем, что имя в первой колонке
+  if (headerIdx < 0) {
+    for (let i = 0; i < Math.min(rows.length, 6); i++) {
+      const info = rowInfo(i);
+      if (info.cols.length >= 2 && !info.marks) {
+        headerIdx = i; dateCols = info.cols; nameCol = 0; break;
+      }
+    }
   }
   if (headerIdx < 0) return null;
+
+  // Считаем сразу все даты: так дату можно переключать вручную, не перезагружая лист.
+  const columns = dateCols.map((col) => {
+    const going = [];
+    const notGoing = [];
+    const marked = [];
+    for (let r = headerIdx + 1; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row) continue;
+      const name = String(cell(row, nameCol)).trim();
+      if (!name) continue;
+      const mark = attendanceMark(cell(row, col.idx));
+      if (mark === null) continue;
+      marked.push(name);
+      (mark ? going : notGoing).push(name);
+    }
+    return {
+      key: col.date.key,
+      label: col.date.raw || col.date.label,
+      going: going,
+      notGoing: notGoing,
+      marked: marked,
+    };
+  }).sort((a, b) => a.key.localeCompare(b.key));
 
   const now = new Date();
   const todayKey = now.getFullYear() + '-' +
     String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
 
-  const upcoming = dateCols.filter((c) => c.date.key >= todayKey);
-  let chosen = upcoming.length ? upcoming[0] : null;
-
-  if (!chosen) {
-    // все даты в прошлом — берём последнюю, где есть хоть одна отметка
-    for (let i = dateCols.length - 1; i >= 0; i--) {
-      const col = dateCols[i];
-      const has = rows.slice(headerIdx + 1).some((r) => attendanceMark(cell(r, col.idx)) != null);
-      if (has) { chosen = col; break; }
+  // дата по умолчанию: ближайшая не прошедшая, иначе последняя с отметками
+  const upcoming = columns.filter((c) => c.key >= todayKey);
+  let auto = upcoming.length ? upcoming[0] : null;
+  if (!auto) {
+    for (let i = columns.length - 1; i >= 0; i--) {
+      if (columns[i].marked.length) { auto = columns[i]; break; }
     }
-    if (!chosen) chosen = dateCols[dateCols.length - 1];
+    if (!auto) auto = columns[columns.length - 1];
   }
 
-  const going = [];
-  const notGoing = [];
-  const marked = [];
-
-  for (let r = headerIdx + 1; r < rows.length; r++) {
-    const row = rows[r];
-    if (!row) continue;
-    const name = String(cell(row, nameCol)).trim();
-    if (!name) continue;
-    const mark = attendanceMark(cell(row, chosen.idx));
-    if (mark === null) continue;
-    marked.push(name);
-    (mark ? going : notGoing).push(name);
-  }
+  const chosen = (pickKey && columns.find((c) => c.key === pickKey)) || auto;
 
   return {
-    dateKey: chosen.date.key,
-    dateLabel: chosen.date.raw || chosen.date.label,
-    dates: dateCols.map((c) => c.date.label),
-    going: going,
-    notGoing: notGoing,
-    marked: marked,
-    answersTotal: marked.length,
+    dateKey: chosen.key,
+    dateLabel: chosen.label,
+    autoKey: auto.key,
+    dates: columns.map((c) => c.label),
+    columns: columns,
+    going: chosen.going,
+    notGoing: chosen.notGoing,
+    marked: chosen.marked,
+    answersTotal: chosen.marked.length,
     format: 'matrix',
   };
 }
 
-/** Строки листа ответов → { dateKey, dateLabel, going, notGoing } */
-function parseAttendance(rows) {
+/** Строки листа ответов → { dateKey, dateLabel, going, notGoing, columns } */
+function parseAttendance(rows, pickKey) {
   if (!rows || !rows.length) return { error: 'Лист ответов пуст.' };
 
   // формат «игроки × даты» — его и использует команда
-  const matrix = parseAttendanceMatrix(rows);
+  const matrix = parseAttendanceMatrix(rows, pickKey);
   if (matrix) return matrix;
 
   let headerIdx = -1;
@@ -613,30 +648,75 @@ function parseAttendance(rows) {
     return { error: 'Не нашёл дату игры. Добавь в форму вопрос «Дата игры».' };
   }
 
-  const latest = dated.map((x) => x.date.key).sort().pop();
-  const game = dated.filter((x) => x.date.key === latest);
-
-  const byName = new Map();
-  for (const rec of game) {
-    const key = normalizeName(rec.name);
-    if (key) byName.set(key, rec);
+  // Группируем ответы по датам — тот же формат столбцов, что у матрицы,
+  // чтобы ручной выбор даты работал и для листа ответов формы.
+  const index = new Map();
+  const dateBuckets = [];
+  for (const rec of dated) {
+    const k = rec.date.key;
+    let col = index.get(k);
+    if (!col) {
+      col = { key: k, label: rec.date.raw || rec.date.label, answers: new Map() };
+      index.set(k, col);
+      dateBuckets.push(col);
+    }
+    const nameKey = normalizeName(rec.name);
+    if (nameKey) col.answers.set(nameKey, rec);
   }
 
-  const going = [];
-  const notGoing = [];
-  const unknown = [];
-  for (const rec of byName.values()) {
-    if (rec.answer) going.push(rec.name);
-    else notGoing.push(rec.name);
-  }
+  const columns = dateBuckets.sort((a, b) => a.key.localeCompare(b.key)).map((col) => {
+    const going = [];
+    const notGoing = [];
+    for (const rec of col.answers.values()) (rec.answer ? going : notGoing).push(rec.name);
+    return {
+      key: col.key,
+      label: col.label,
+      going: going,
+      notGoing: notGoing,
+      marked: going.concat(notGoing),
+    };
+  });
+
+  const now = new Date();
+  const todayKey = now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  const upcoming = columns.filter((c) => c.key >= todayKey);
+  const auto = upcoming.length ? upcoming[0] : columns[columns.length - 1];
+  const chosen = (pickKey && columns.find((c) => c.key === pickKey)) || auto;
 
   return {
-    dateKey: latest,
-    dateLabel: dated.find((x) => x.date.key === latest).date.label,
-    going,
-    notGoing,
-    answersTotal: byName.size,
+    dateKey: chosen.key,
+    dateLabel: chosen.label,
+    autoKey: auto.key,
+    dates: columns.map((c) => c.label),
+    columns: columns,
+    going: chosen.going,
+    notGoing: chosen.notGoing,
+    marked: chosen.marked,
+    answersTotal: chosen.marked.length,
+    format: 'form',
   };
+}
+
+/** Переключение даты игры без повторной загрузки листа. */
+function applyAttDate(key) {
+  const att = state.attendance;
+  if (!att || !Array.isArray(att.columns) || !att.columns.length) return false;
+
+  const target = key
+    ? att.columns.find((c) => c.key === key)
+    : att.columns.find((c) => c.key === att.autoKey);
+
+  if (!target) return false;
+
+  state.attDateKey = key ? key : null;
+  att.dateKey = target.key;
+  att.dateLabel = target.label;
+  att.going = target.going;
+  att.notGoing = target.notGoing;
+  att.marked = target.marked;
+  saveState();
+  return true;
 }
 
 function attendanceGoingSet() {
@@ -670,6 +750,10 @@ const blankState = () => ({
   url: '',
   attUrl: '',
   attendance: null,
+  attDateKey: null,
+  histUrl: '',
+  scriptUrl: '',
+  history: [],
   teamCount: 3,
   opts: { useGk: true, onlyGoing: false, pots: true },
 });
@@ -702,6 +786,10 @@ function loadState() {
       url: typeof data.url === 'string' ? data.url : '',
       attUrl: typeof data.attUrl === 'string' ? data.attUrl : '',
       attendance: data.attendance && Array.isArray(data.attendance.going) ? data.attendance : null,
+      attDateKey: typeof data.attDateKey === 'string' ? data.attDateKey : null,
+      histUrl: typeof data.histUrl === 'string' ? data.histUrl : '',
+      scriptUrl: typeof data.scriptUrl === 'string' ? data.scriptUrl : '',
+      history: Array.isArray(data.history) ? data.history : [],
       teamCount: data.teamCount === 2 ? 2 : 3,
       opts: {
         useGk: data.opts ? data.opts.useGk !== false : true,
@@ -906,12 +994,35 @@ function bestKeeper(team) {
   return pool.reduce((best, p) => (!best || p.gk > best.gk ? p : best), null);
 }
 
+function renderAttDateField() {
+  const field = $('#attDateField');
+  const sel = $('#attDate');
+  if (!field || !sel) return;
+
+  const att = state.attendance;
+  const cols = att && Array.isArray(att.columns) ? att.columns : [];
+
+  if (cols.length < 2) {
+    field.hidden = true;
+    sel.innerHTML = '';
+    return;
+  }
+
+  field.hidden = false;
+  sel.innerHTML = '<option value="">авто — ближайшая</option>' +
+    cols.map((c) => '<option value="' + esc(c.key) + '">' + esc(c.label) +
+      (c.marked.length ? ' · ' + c.marked.length + ' отм.' : '') + '</option>').join('');
+  sel.value = state.attDateKey || '';
+}
+
 function renderAttendance() {
   const pill = $('#attState');
   const box = $('#attSummary');
   const att = state.attendance;
 
   if (!pill || !box) return;
+
+  renderAttDateField();
 
   if (!att) {
     pill.textContent = 'не загружена';
@@ -936,6 +1047,8 @@ function renderAttendance() {
 
   box.hidden = false;
   box.innerHTML =
+    '<p class="hint">Игра <b>' + esc(att.dateLabel) + '</b> — ' +
+    (state.attDateKey ? 'дата выбрана вручную' : 'дата выбрана автоматически (ближайшая)') + '.</p>' +
     '<div class="att-nums">' +
     '<div class="stat"><b>' + coming.length + '</b><span>придут</span></div>' +
     '<div class="stat"><b>' + declined.length + '</b><span>не смогут</span></div>' +
@@ -998,11 +1111,12 @@ function renderResult(result) {
   }
 
   const notes = [];
-  if (result.onlyGoing && result.attendance) {
-    notes.push('Игра ' + result.attendance.dateLabel + ': учтены только подтвердившие явку.' +
-      (result.skipped && result.skipped.length
-        ? ' Не в составе: ' + result.skipped.length + ' чел.'
-        : ''));
+  if (result.attendance) {
+    notes.push('Игра ' + result.attendance.dateLabel +
+      (result.onlyGoing
+        ? ': учтены только подтвердившие явку.' +
+          (result.skipped && result.skipped.length ? ' Не в составе: ' + result.skipped.length + ' чел.' : '')
+        : ': учтены все из состава (явка не фильтровалась).'));
   }
   if (sizeGap) {
     notes.push('Команды разного размера (' + sizesArr.join(' / ') +
@@ -1028,6 +1142,7 @@ function renderResult(result) {
     '<div class="row" style="margin-top:12px">' +
     '<button class="btn" type="button" data-act="reroll">Ещё вариант</button>' +
     '<button class="btn" type="button" data-act="share">Поделиться</button>' +
+    '<button class="btn primary" type="button" data-act="save">Сохранить игру</button>' +
     '</div>' +
     (warnings.length ? '<div class="warnlist">' + warnings.map(esc).join('<br>') + '</div>' : '') +
     '</div>' +
@@ -1101,6 +1216,484 @@ async function shareResult() {
   } catch (e) {
     toast('Не удалось поделиться', 'err');
   }
+}
+
+/* ======================================================================
+   История игр (лист «История» в Google Таблице)
+   ====================================================================== */
+
+function todayKey() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function todayLabel() {
+  const d = new Date();
+  return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear();
+}
+
+/** Имя в ячейке не должно ломать разбор по «;». */
+function cleanName(name) {
+  return String(name == null ? '' : name).replace(/[;\r\n]/g, ' ').trim();
+}
+
+function fmtNum(v) {
+  return isNum(v) ? v.toFixed(1) : '0.0';
+}
+
+/** Команда → «Юра 7.1/5.0; Гриша 6.9/4.0» */
+function formatTeamCell(team) {
+  return team.players.map((p) => cleanName(p.name) + ' ' + fmtNum(p.field) + '/' + fmtNum(p.gk)).join('; ');
+}
+
+function parseTeamCell(value, fallbackName) {
+  const team = { name: fallbackName, players: [] };
+  for (const part of String(value == null ? '' : value).split(';')) {
+    const s = part.trim();
+    if (!s) continue;
+    const m = s.match(/^(.*?)\s+(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)$/);
+    if (m) {
+      team.players.push({
+        name: m[1].trim(),
+        field: Number(m[2].replace(',', '.')),
+        gk: Number(m[3].replace(',', '.')),
+      });
+    } else {
+      team.players.push({ name: s, field: null, gk: null });
+    }
+  }
+  return team;
+}
+
+/** Матчи → «Синие–Красные 3:1; Синие–Белые 2:2» */
+function formatScoreCell(matches) {
+  return (matches || []).map((m) => m.a + '–' + m.b + ' ' + m.ga + ':' + m.gb).join('; ');
+}
+
+function parseScoreCell(value) {
+  const out = [];
+  for (const part of String(value == null ? '' : value).split(';')) {
+    const s = part.trim();
+    if (!s) continue;
+    const m = s.match(/^(.*?)\s*[–—\-]\s*(.*?)\s+(\d{1,3})\s*:\s*(\d{1,3})$/);
+    if (!m) continue;
+    out.push({ a: m[1].trim(), b: m[2].trim(), ga: Number(m[3]), gb: Number(m[4]) });
+  }
+  return out;
+}
+
+/** Раскладка с экрана «Команды» → запись истории. */
+function gameFromResult(result) {
+  if (!result || !result.teams) return null;
+  const att = state.attendance;
+  const game = {
+    id: att && att.dateKey ? att.dateKey : todayKey(),
+    dateKey: att && att.dateKey ? att.dateKey : todayKey(),
+    dateLabel: att && att.dateLabel ? att.dateLabel : todayLabel(),
+    teamCount: result.teams.length,
+    teams: result.teams.map((t, i) => ({
+      name: TEAM_META[i % TEAM_META.length].name,
+      players: t.slice().sort((a, b) => b.field - a.field)
+        .map((p) => ({ name: p.name, field: round1(p.field), gk: round1(p.gk) })),
+    })),
+    matches: [],
+    updatedAt: '',
+  };
+  // счёт, уже введённый ранее для этой даты, не теряем при перераспределении
+  const prev = (state.history || []).find((g) => g.id === game.id);
+  if (prev && Array.isArray(prev.matches) && prev.matches.length) game.matches = prev.matches;
+  return game;
+}
+
+function historyPayload(game) {
+  return {
+    sheet: 'История',
+    id: game.id,
+    date: game.dateLabel,
+    teamCount: game.teams.length,
+    score: formatScoreCell(game.matches),
+    teams: [0, 1, 2].map((i) => (game.teams[i] ? formatTeamCell(game.teams[i]) : '')),
+  };
+}
+
+async function pushGame(game) {
+  if (!state.scriptUrl) return false;
+  try {
+    await fetch(state.scriptUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(historyPayload(game)),
+    });
+    game.sent = true;
+    game.pending = false;
+    saveState();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function saveGame(game) {
+  const clean = {
+    id: game.id,
+    dateKey: game.dateKey || game.id,
+    dateLabel: game.dateLabel || game.id,
+    teamCount: game.teams.length,
+    teams: game.teams.map((t) => ({
+      name: t.name,
+      players: t.players.map((p) => ({ name: p.name, field: p.field, gk: p.gk })),
+    })),
+    matches: (game.matches || []).map((m) => ({ a: m.a, b: m.b, ga: m.ga, gb: m.gb })),
+    updatedAt: new Date().toISOString(),
+    sent: false,
+    pending: false,
+  };
+
+  const i = (state.history || []).findIndex((g) => g.id === clean.id);
+  if (i >= 0) state.history[i] = clean;
+  else state.history.unshift(clean);
+  saveState();
+  renderHistory();
+
+  if (!state.scriptUrl) {
+    clean.pending = true;
+    saveState();
+    renderHistory();
+    toast('Игра сохранена на телефоне', 'ok');
+    return { saved: true, sent: false };
+  }
+
+  const ok = await pushGame(clean);
+  renderHistory();
+  if (ok) {
+    toast('Игра ' + clean.dateLabel + ' отправлена в таблицу', 'ok');
+    setTimeout(() => { loadHistory(true).catch(() => {}); }, 1500);
+  } else {
+    clean.pending = true;
+    saveState();
+    renderHistory();
+    toast('В таблицу не ушло — сохранено на телефоне', 'err');
+  }
+  return { saved: true, sent: ok };
+}
+
+async function deleteGame(id) {
+  const game = (state.history || []).find((g) => g.id === id);
+  if (!game) return;
+
+  const inSheet = !game.pending;
+  if (!confirm(inSheet
+    ? 'Удалить игру ' + game.dateLabel + ' из приложения и из листа «История»?'
+    : 'Удалить игру ' + game.dateLabel + ' с телефона?')) return;
+
+  if (inSheet && state.scriptUrl) {
+    try {
+      await fetch(state.scriptUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'delete', id: id }),
+      });
+    } catch (e) { /* строка останется в листе — скажем об этом ниже */ }
+  }
+
+  state.history = (state.history || []).filter((g) => g.id !== id);
+  saveState();
+  renderHistory();
+  toast('Удалено', 'ok');
+}
+
+/** Строки листа «История» → массив игр. */
+function parseHistoryRows(rows) {
+  if (!rows || rows.length < 2) return [];
+  const games = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const id = String(cell(row, 0)).trim();
+    if (!id) continue;
+
+    const teams = [];
+    HIST_TEAM_COLS.forEach((c, idx) => {
+      const team = parseTeamCell(cell(row, c), TEAM_META[idx].name);
+      if (team.players.length) teams.push(team);
+    });
+    if (!teams.length) continue;
+
+    const dateLabel = String(cell(row, 1)).trim() || id;
+    const parsed = parseGameDate(dateLabel);
+    games.push({
+      id: id,
+      dateKey: parsed ? parsed.key : id,
+      dateLabel: dateLabel,
+      teams: teams,
+      teamCount: teams.length,
+      matches: parseScoreCell(cell(row, 3)),
+      updatedAt: String(cell(row, 7) || ''),
+      sent: true,
+      pending: false,
+    });
+  }
+  return games.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+}
+
+/** Подтянуть историю из таблицы. Локальные неотправленные записи сохраняем. */
+async function loadHistory(quiet) {
+  if (!state.histUrl) {
+    if (!quiet) toast('Сначала укажи ссылку на лист «История»', 'err');
+    return false;
+  }
+  try {
+    const text = await fetchSheetText(state.histUrl);
+    const fromSheet = parseHistoryRows(parseCSV(text));
+    const ids = new Set(fromSheet.map((g) => g.id));
+    const local = (state.history || [])
+      .filter((g) => !ids.has(g.id))
+      .map((g) => Object.assign({}, g, { pending: true }));
+
+    state.history = fromSheet.concat(local)
+      .sort((a, b) => String(b.dateKey || b.id).localeCompare(String(a.dateKey || a.id)));
+    saveState();
+    renderHistory();
+    if (!quiet) {
+      toast(fromSheet.length
+        ? 'Из таблицы загружено игр: ' + fromSheet.length
+        : 'В листе «История» пока нет записей', 'ok');
+    }
+    return true;
+  } catch (err) {
+    if (!quiet) {
+      const msg = err && err.message ? err.message : 'Не получилось загрузить историю';
+      toast(/fetch|network|Failed/i.test(msg) ? 'Не удалось прочитать лист «История»' : msg, 'err');
+    }
+    return false;
+  }
+}
+
+/** Итоги по истории: посещаемость, сыгранность, очки, попадание баланса. */
+function historyStats(games) {
+  const players = new Map();
+  const pairs = new Map();
+  let scored = 0;
+  let topWon = 0;
+
+  const sumField = (team) => sum(team.players.map((p) => (isNum(p.field) ? p.field : 0)));
+
+  for (const g of games) {
+    const matches = Array.isArray(g.matches) ? g.matches : [];
+    const idxOf = (name) => g.teams.findIndex((t) => t.name === name);
+    const pts = g.teams.map(() => 0);
+    const st = g.teams.map(() => ({ w: 0, d: 0, l: 0 }));
+
+    for (const m of matches) {
+      const ia = idxOf(m.a);
+      const ib = idxOf(m.b);
+      if (ia < 0 || ib < 0 || ia === ib) continue;
+      if (m.ga > m.gb) { pts[ia] += 3; st[ia].w++; st[ib].l++; }
+      else if (m.ga < m.gb) { pts[ib] += 3; st[ib].w++; st[ia].l++; }
+      else { pts[ia] += 1; pts[ib] += 1; st[ia].d++; st[ib].d++; }
+    }
+
+    g.teams.forEach((team, ti) => {
+      const names = team.players.map((p) => p.name);
+      for (const name of names) {
+        const key = normalizeName(name);
+        if (!key) continue;
+        if (!players.has(key)) players.set(key, { name, games: 0, w: 0, d: 0, l: 0, pts: 0 });
+        const rec = players.get(key);
+        rec.name = name;
+        rec.games++;
+        if (matches.length) {
+          rec.w += st[ti].w;
+          rec.d += st[ti].d;
+          rec.l += st[ti].l;
+          rec.pts += pts[ti];
+        }
+      }
+      for (let i = 0; i < names.length; i++) {
+        for (let j = i + 1; j < names.length; j++) {
+          const a = normalizeName(names[i]);
+          const b = normalizeName(names[j]);
+          if (!a || !b) continue;
+          const key = a < b ? a + '|' + b : b + '|' + a;
+          if (!pairs.has(key)) pairs.set(key, { a: names[i], b: names[j], times: 0 });
+          pairs.get(key).times++;
+        }
+      }
+    });
+
+    if (matches.length) {
+      scored++;
+      const fields = g.teams.map(sumField);
+      const bestField = Math.max.apply(null, fields);
+      const bestPts = Math.max.apply(null, pts);
+      const strongest = fields.map((v, i) => (v === bestField ? i : -1)).filter((i) => i >= 0);
+      if (strongest.some((i) => pts[i] === bestPts)) topWon++;
+    }
+  }
+
+  return {
+    games: games.length,
+    scored: scored,
+    topWon: topWon,
+    players: Array.from(players.values()).sort((a, b) => b.pts - a.pts || b.games - a.games),
+    pairs: Array.from(pairs.values()).sort((a, b) => b.times - a.times),
+  };
+}
+
+function historyCard(g) {
+  const score = (g.matches || []).length
+    ? g.matches.map((m) => esc(m.a) + ' ' + m.ga + ':' + m.gb + ' ' + esc(m.b)).join(' · ')
+    : 'счёт не записан';
+
+  const teams = g.teams.map((t, i) => {
+    const meta = TEAM_META[i % TEAM_META.length];
+    const fieldSum = sum(t.players.map((p) => (isNum(p.field) ? p.field : 0)));
+    const gkSum = sum(t.players.map((p) => (isNum(p.gk) ? p.gk : 0)));
+    const list = t.players.map((p) => '<div class="hist-p"><span class="lname">' + esc(p.name) + '</span>' +
+      '<span class="lov">' + fmt(p.field) + '</span><span class="lov gk">' + fmt(p.gk) + '</span></div>').join('');
+    return '<details class="hist-team" style="--tc:' + meta.color + '">' +
+      '<summary><i></i>' + esc(t.name || meta.name) +
+      '<span class="hs-meta">' + fmt(fieldSum) + ' в поле · ' + fmt(gkSum) + ' в рамке</span></summary>' +
+      '<div class="hist-players">' + list + '</div></details>';
+  }).join('');
+
+  return '<div class="card hist-item reveal">' +
+    '<div class="hist-head">' +
+    '<div><div class="hist-date">' + esc(g.dateLabel || g.id) + '</div>' +
+    '<div class="result-sub">' + esc(score) + '</div></div>' +
+    (g.pending ? '<span class="pill err">не в таблице</span>' : '') +
+    '</div>' +
+    teams +
+    '<div class="row" style="margin-top:10px">' +
+    '<button class="btn ghost small-btn" type="button" data-hist="score" data-id="' + esc(g.id) + '">' +
+    ((g.matches || []).length ? 'Поправить счёт' : 'Вписать счёт') + '</button>' +
+    (g.pending ? '<button class="btn ghost small-btn" type="button" data-hist="push" data-id="' + esc(g.id) + '">Отправить в таблицу</button>' : '') +
+    '<button class="btn ghost small-btn danger" type="button" data-hist="del" data-id="' + esc(g.id) + '">Удалить</button>' +
+    '</div>' +
+    '</div>';
+}
+
+function statsHtml(st) {
+  if (!st.games) return '';
+
+  const players = st.players.slice(0, 40).map((p) => {
+    const pct = Math.round((p.games / st.games) * 100);
+    return '<tr><td>' + esc(p.name) + '</td><td>' + p.games + '</td><td>' + pct + '%</td>' +
+      '<td>' + p.w + '/' + p.d + '/' + p.l + '</td><td>' + p.pts + '</td></tr>';
+  }).join('');
+
+  const pairs = st.pairs.slice(0, 10).map((p) =>
+    '<tr><td>' + esc(p.a) + ' + ' + esc(p.b) + '</td><td>' + p.times + '</td></tr>').join('');
+
+  const predict = st.scored
+    ? '<b>' + st.topWon + '</b> из <b>' + st.scored + '</b> (' + Math.round((st.topWon / st.scored) * 100) + '%)'
+    : '—';
+
+  return '<div class="card">' +
+    '<div class="card-head"><h2>Статистика</h2><span class="pill">' + st.games + ' игр</span></div>' +
+
+    '<h3 class="stats-h">Посещаемость и очки</h3>' +
+    '<p class="hint">«Игр» — сколько раз был в составе, «В/Н/П» — матчи его команды, «Очки» — 3 за победу, 1 за ничью.</p>' +
+    '<div class="tablewrap"><table class="ref-table"><thead><tr>' +
+    '<th>Игрок</th><th>Игр</th><th>%</th><th>В/Н/П</th><th>Очки</th>' +
+    '</tr></thead><tbody>' + players + '</tbody></table></div>' +
+
+    '<h3 class="stats-h">Сыгранность</h3>' +
+    '<p class="hint">Кто чаще всего попадал с кем в одну команду. Кого много — стоит разводить по разным составам.</p>' +
+    '<div class="tablewrap"><table class="ref-table"><thead><tr>' +
+    '<th>Пара</th><th>Раз вместе</th>' +
+    '</tr></thead><tbody>' + (pairs || '<tr><td colspan="2" class="muted">Пока нет данных</td></tr>') + '</tbody></table></div>' +
+
+    '<h3 class="stats-h">Баланс и результат</h3>' +
+    '<p class="hint">Сильнейшая по сумме скилов команда набирала больше всех очков в ' + predict +
+    ' игр со счётом. Если доля высокая — распределение по скилам предсказывает результат.</p>' +
+    '</div>';
+}
+
+function renderHistory() {
+  const listEl = $('#histList');
+  const statsEl = $('#histStats');
+  const pill = $('#histState');
+  if (!listEl) return;
+
+  const games = (state.history || []).slice()
+    .sort((a, b) => String(b.dateKey || b.id).localeCompare(String(a.dateKey || a.id)));
+
+  if (pill) {
+    pill.textContent = games.length ? games.length + ' игр' : 'пусто';
+    pill.className = 'pill' + (games.length ? ' ok' : '');
+  }
+
+  if (!games.length) {
+    listEl.innerHTML = '<div class="card"><p class="muted small">Истории пока нет.</p>' +
+      '<p class="hint">Разложи команды на экране «Команды» и нажми «Сохранить игру». ' +
+      'Если указан лист «История» и адрес скрипта, запись уйдёт в таблицу.</p></div>';
+    if (statsEl) statsEl.innerHTML = '';
+    return;
+  }
+
+  listEl.innerHTML = games.map(historyCard).join('');
+  if (statsEl) statsEl.innerHTML = statsHtml(historyStats(games));
+}
+
+/* ---------- диалог счёта ---------- */
+
+let scoreGame = null;
+
+/** Для 3 команд круговой: А–Б, А–В, Б–В. */
+function pairList(count) {
+  if (count <= 2) return [[0, 1]];
+  return [[0, 1], [0, 2], [1, 2]];
+}
+
+function openScoreDialog(game) {
+  const dlg = $('#dlgScore');
+  if (!dlg || !game) return;
+
+  scoreGame = game;
+  $('#scoreTitle').textContent = 'Счёт · ' + (game.dateLabel || game.id);
+
+  const found = new Map((game.matches || []).map((m) => [m.a + '|' + m.b, m]));
+  $('#scoreRows').innerHTML = pairList(game.teams.length).map((pair, i) => {
+    const a = game.teams[pair[0]].name;
+    const b = game.teams[pair[1]].name;
+    const m = found.get(a + '|' + b);
+    return '<div class="pair-row">' +
+      '<span class="pair-names"><b>' + esc(a) + '</b><span class="muted"> — ' + esc(b) + '</span></span>' +
+      '<input class="pair-in" type="number" inputmode="numeric" min="0" max="99" step="1"' +
+      ' data-pair="' + i + '" data-side="a" value="' + (m ? m.ga : '') + '" placeholder="—" />' +
+      '<span class="pair-colon">:</span>' +
+      '<input class="pair-in" type="number" inputmode="numeric" min="0" max="99" step="1"' +
+      ' data-pair="' + i + '" data-side="b" value="' + (m ? m.gb : '') + '" placeholder="—" />' +
+      '</div>';
+  }).join('');
+
+  $('#scoreNote').textContent = 'Пустая пара — матч не играли. Счёт можно вписать позже на экране «История».';
+  dlg.showModal();
+}
+
+async function applyScoreDialog() {
+  const game = scoreGame;
+  if (!game) return;
+
+  const matches = [];
+  pairList(game.teams.length).forEach((pair, i) => {
+    const aEl = $('[data-pair="' + i + '"][data-side="a"]');
+    const bEl = $('[data-pair="' + i + '"][data-side="b"]');
+    if (!aEl || !bEl) return;
+    if (aEl.value === '' || bEl.value === '') return;
+    const ga = Number(aEl.value);
+    const gb = Number(bEl.value);
+    if (!isFinite(ga) || !isFinite(gb) || ga < 0 || gb < 0) return;
+    matches.push({ a: game.teams[pair[0]].name, b: game.teams[pair[1]].name, ga: ga, gb: gb });
+  });
+
+  game.matches = matches;
+  scoreGame = null;
+  $('#dlgScore').close();
+  await saveGame(game);
 }
 
 function mergePlayers(incoming) {
@@ -1439,12 +2032,17 @@ function init() {
     btn.textContent = 'Загружаю…';
     try {
       const text = await fetchSheetText(url);
-      const parsed = parseAttendance(parseCSV(text));
+      const parsed = parseAttendance(parseCSV(text), state.attDateKey);
       if (parsed.error) throw new Error(parsed.error);
+
+      // выбранной вручную даты могло не оказаться в обновлённом листе
+      if (state.attDateKey && parsed.dateKey !== state.attDateKey) state.attDateKey = null;
 
       state.attendance = {
         dateKey: parsed.dateKey,
         dateLabel: parsed.dateLabel,
+        autoKey: parsed.autoKey || parsed.dateKey,
+        columns: Array.isArray(parsed.columns) ? parsed.columns : [],
         going: parsed.going,
         notGoing: parsed.notGoing,
         marked: Array.isArray(parsed.marked) ? parsed.marked : [],
@@ -1492,6 +2090,18 @@ function init() {
     saveState();
   });
 
+  /* --- дата игры --- */
+  $('#attDate').addEventListener('change', (e) => {
+    const key = e.target.value;
+    if (!applyAttDate(key)) { toast('Эта дата не найдена в листе', 'err'); return; }
+    renderAttendance();
+    syncTeamControls();
+    renderPlayers();
+    lastResult = null;
+    $('#resultWrap').innerHTML = '';
+    toast('Игра ' + state.attendance.dateLabel, 'ok');
+  });
+
   $('#optPots').addEventListener('change', (e) => {
     state.opts.pots = e.target.checked;
     saveState();
@@ -1504,6 +2114,73 @@ function init() {
     if (!b) return;
     if (b.dataset.act === 'reroll') doBalance(true);
     if (b.dataset.act === 'share') shareResult();
+    if (b.dataset.act === 'save') {
+      const game = gameFromResult(lastResult);
+      if (!game) { toast('Сначала распредели команды', 'err'); return; }
+      openScoreDialog(game);
+    }
+  });
+
+  /* --- история --- */
+  $('#histUrl').value = state.histUrl || '';
+  $('#scriptUrl').value = state.scriptUrl || '';
+
+  $('#openHist').addEventListener('click', () => openSheetTab('histUrl', 'лист «История»'));
+
+  $('#btnLoadHist').addEventListener('click', async () => {
+    const url = $('#histUrl').value.trim();
+    if (!url) { toast('Вставь ссылку на лист «История»', 'err'); return; }
+
+    const btn = $('#btnLoadHist');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Загружаю…';
+    try {
+      state.histUrl = url;
+      saveState();
+      await loadHistory(false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+
+  $('#scriptUrl').addEventListener('change', (e) => {
+    state.scriptUrl = e.target.value.trim();
+    saveState();
+    toast(state.scriptUrl ? 'Адрес скрипта сохранён' : 'Адрес скрипта очищен', 'ok');
+  });
+
+  $('#histList').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-hist]');
+    if (!b) return;
+    const game = (state.history || []).find((g) => g.id === b.dataset.id);
+    if (!game) return;
+
+    if (b.dataset.hist === 'score') openScoreDialog(game);
+    if (b.dataset.hist === 'del') deleteGame(game.id);
+    if (b.dataset.hist === 'push') {
+      pushGame(game).then((ok) => {
+        renderHistory();
+        toast(ok ? 'Отправлено в таблицу' : 'Не удалось отправить', ok ? 'ok' : 'err');
+      });
+    }
+  });
+
+  $('#scoreForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    applyScoreDialog();
+  });
+
+  $('#btnCopyScript').addEventListener('click', async () => {
+    const code = $('#scriptCode');
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code.textContent);
+      toast('Код скопирован', 'ok');
+    } catch (e) {
+      toast('Не удалось скопировать — выдели код вручную', 'err');
+    }
   });
 
   /* --- настройки --- */
@@ -1659,6 +2336,7 @@ function init() {
   renderPlayers();
   renderHeaderState();
   renderAttendance();
+  renderHistory();
   syncTeamControls();
 }
 
@@ -1666,7 +2344,9 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     parseCSV, rowsToPlayers, prepare, balance, num, makePlayer,
     contextOf, fieldRating, gkRating, fieldFilled, gkFilled,
-    parseAttendance, parseGameDate, normalizeName, isGoingAnswer, attendanceMark,
+    parseAttendance, parseAttendanceMatrix, parseGameDate, normalizeName, isGoingAnswer, attendanceMark,
+    parseHistoryRows, historyStats, parseTeamCell, parseScoreCell, formatTeamCell, formatScoreCell,
+    todayKey,
   };
 }
 
