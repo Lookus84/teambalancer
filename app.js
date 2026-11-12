@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '18';
+const APP_VERSION = '19';
 
 /* ======================================================================
    Мелкие утилиты
@@ -1535,15 +1535,56 @@ function init() {
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     installEvent = e;
-    if (installBtn) installBtn.hidden = false;
-    if (installNote) installNote.textContent = '';
+    refreshInstallButtons();
   });
 
-  if (installBtn) {
-    if (isStandalone()) {
-      installBtn.hidden = true;
-      if (installNote) installNote.textContent = 'Приложение уже открыто как установленное.';
+  const uninstallBtn = $('#btnUninstall');
+
+  const refreshInstallButtons = () => {
+    const installed = isStandalone();
+    if (installBtn) installBtn.hidden = installed || !installEvent;
+    if (uninstallBtn) uninstallBtn.hidden = !installed;
+    if (installNote) {
+      installNote.textContent = installed ? 'Приложение установлено на этом устройстве.' : '';
     }
+  };
+  refreshInstallButtons();
+
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(display-mode: standalone)');
+    if (mq.addEventListener) mq.addEventListener('change', refreshInstallButtons);
+  }
+
+  if (uninstallBtn) {
+    uninstallBtn.addEventListener('click', () => {
+      const dlg = $('#dlgUninstall');
+      if (dlg && !dlg.open) dlg.showModal();
+    });
+  }
+
+  const wipeBtn = $('#btnWipe');
+  if (wipeBtn) {
+    wipeBtn.addEventListener('click', async () => {
+      if (!confirm('Стереть состав, настройки и офлайн-кэш на этом устройстве?')) return;
+      try {
+        localStorage.clear();
+        if (window.caches) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((k) => caches.delete(k)));
+        }
+        if (navigator.serviceWorker) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((r) => r.unregister()));
+        }
+      } catch (err) { /* приложение всё равно перезагрузим */ }
+      const dlg = $('#dlgUninstall');
+      if (dlg && dlg.open) dlg.close();
+      toast('Данные стёрты, перезагружаю', 'ok');
+      setTimeout(() => location.reload(), 500);
+    });
+  }
+
+  if (installBtn) {
     installBtn.addEventListener('click', async () => {
       if (!installEvent) {
         toast('Кнопка установки недоступна: откройте меню браузера', 'err');
@@ -1560,7 +1601,8 @@ function init() {
   }
 
   window.addEventListener('appinstalled', () => {
-    if (installBtn) installBtn.hidden = true;
+    installEvent = null;
+    refreshInstallButtons();
     toast('Приложение установлено', 'ok');
   });
 

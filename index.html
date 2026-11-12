@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
-<link rel="stylesheet" href="styles.css?v=18" />
+<link rel="stylesheet" href="styles.css?v=19" />
 </head>
 <body>
 <div class="app">
@@ -177,6 +177,7 @@
       <div class="card">
         <div class="card-head"><h2>Установка на телефон</h2></div>
         <button class="btn primary" id="btnInstall" type="button" hidden>Установить приложение</button>
+        <button class="btn danger" id="btnUninstall" type="button" hidden>Удалить приложение</button>
         <p class="muted small"><b>iPhone:</b> только через Safari — «Поделиться» → «На экран “Домой”» (Chrome на iPhone не ставит веб-приложения).<br /><b>Android:</b> Chrome → меню ⋮ → «Установить приложение» или «Добавить на главный экран».</p>
         <p class="muted small" id="installNote"></p>
         <p class="muted small" id="swState"></p>
@@ -271,8 +272,27 @@
   </form>
 </dialog>
 
+<!-- ================= dialog: удаление приложения ================= -->
+<dialog id="dlgUninstall" class="sheet">
+  <div class="sheet-head">
+    <h2>Удалить приложение</h2>
+    <button class="btn ghost icon" type="button" data-close>✕</button>
+  </div>
+  <p class="hint">Веб-приложение не может удалить себя само — иконку убирают через систему:</p>
+  <ul class="list">
+    <li><b>iPhone:</b> удерживайте иконку «Баланс» на экране «Домой» → «Удалить приложение».</li>
+    <li><b>Android:</b> удерживайте иконку → «Удалить» (или Chrome → ⋮ → «Управление приложениями»).</li>
+    <li><b>Компьютер:</b> откройте <code>chrome://apps</code>, правый клик по «Баланс команд» → «Удалить».</li>
+  </ul>
+  <p class="hint">Ниже — то, что приложение может сделать само: стереть состав, настройки и офлайн-кэш на этом устройстве.</p>
+  <div class="sheet-actions">
+    <button class="btn ghost" type="button" data-close>Закрыть</button>
+    <button class="btn danger" id="btnWipe" type="button">Стереть данные</button>
+  </div>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

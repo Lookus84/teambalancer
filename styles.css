@@ -599,3 +599,6 @@ dialog.sheet form { padding: 16px; }
   transition: background .16s, color .16s;
 }
 .viewswitch button.on { color: #04202a; background: linear-gradient(135deg, #67e8f9, #22d3ee); }
+
+.list { margin: 10px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; color: #cbd8ec; }
+.list li { margin-bottom: 6px; }
