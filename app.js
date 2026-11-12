@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '16';
+const APP_VERSION = '17';
 
 /* ======================================================================
    Мелкие утилиты
@@ -476,16 +476,23 @@ function isGoingAnswer(text) {
   return null;
 }
 
-/** Отметка в ячейке листа явки: «+», «да», «иду» — придёт; «-», «нет» — не придёт. */
+/** Отметка в ячейке листа явки. Понимает «+»/«-», «да»/«нет» и значения выпадающего списка «Играю»/«Не играю». */
 function attendanceMark(value) {
-  const s = String(value == null ? '' : value).trim().toLowerCase().replace(/ё/g, 'е');
-  if (!s) return null;
-  if (s === '-' || s === '−' || s === '—') return false;
-  if (/^(нет|не|н|no|n|0|пас|не приду|не смогу|не буду)$/.test(s)) return false;
-  if (/^(\+|да|y|yes|true|1|иду|буду|приду|ок|ok|✓|✔|✅)$/.test(s)) return true;
-  if (s.indexOf('+') >= 0) return true;
-  if (/не\s|нет/.test(s)) return false;
-  if (/приду|буду|иду|да/.test(s)) return true;
+  const raw = String(value == null ? '' : value).trim().toLowerCase().replace(/ё/g, 'е');
+  if (!raw) return null;
+
+  if (/^[-−—–]+$/.test(raw)) return false;
+  if (/^[+✓✔✅👍]+$/.test(raw)) return true;
+
+  const s = raw.replace(/[.,!;:]+$/g, '').replace(/\s+/g, ' ');
+
+  // отрицание всегда проверяем первым: «не играю», «не приду», «нет»
+  if (/^не(\s|$)/.test(s) || /^(нет|no|n|0|пас|пропуск)/.test(s)) return false;
+
+  if (/^(да|yes|y|true|1|ок|ok|играю|играем|буду|приду|иду|смогу|есть)$/.test(s)) return true;
+
+  if (/(игра|приду|буду|иду|смогу|ед)/.test(s)) return true;
+  if (/(нет|пас|пропуск)/.test(s)) return false;
   return null;
 }
 
@@ -1545,7 +1552,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     parseCSV, rowsToPlayers, prepare, balance, num, makePlayer,
     contextOf, fieldRating, gkRating, fieldFilled, gkFilled,
-    parseAttendance, parseGameDate, normalizeName, isGoingAnswer,
+    parseAttendance, parseGameDate, normalizeName, isGoingAnswer, attendanceMark,
   };
 }
 

@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
-<link rel="stylesheet" href="styles.css?v=16" />
+<link rel="stylesheet" href="styles.css?v=17" />
 </head>
 <body>
 <div class="app">
@@ -69,7 +69,7 @@
           <button class="btn primary" id="btnLoadAtt" type="button">Загрузить явку</button>
         </div>
         <div class="att-summary" id="attSummary" hidden></div>
-        <p class="hint">Лист: строки — игроки, колонки — даты игр, в ячейке «+» (приду) или «−» (не приду). Приложение берёт ближайшую дату и учитывает только плюсы. Лист ответов Google Формы тоже подходит.</p>
+        <p class="hint">Лист: строки — игроки, колонки — даты игр. В ячейке «Играю» / «Не играю» (или «+» / «−»), пусто — человек не отвечал. Приложение берёт ближайшую дату и учитывает только «Играю».</p>
       </div>
 
       <div class="card">
@@ -271,6 +271,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
