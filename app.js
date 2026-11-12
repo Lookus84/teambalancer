@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '14';
+const APP_VERSION = '15';
 
 /* ======================================================================
    Мелкие утилиты
