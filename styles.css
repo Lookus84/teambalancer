@@ -17,6 +17,10 @@
 
 * { box-sizing: border-box; }
 
+/* Атрибут hidden должен побеждать любые display из классов:
+   без этого .view { display: flex } перебивает hidden, и все экраны видны сразу. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
