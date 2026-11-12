@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '19';
+const APP_VERSION = '20';
 
 /* ======================================================================
    Мелкие утилиты
@@ -1121,6 +1121,30 @@ function mergePlayers(incoming) {
   return { added, updated };
 }
 
+/* ---------- переход в Google Таблицу ---------- */
+
+/** Из любой ссылки на таблицу делает редактируемый адрес (сохраняя gid листа). */
+function sheetEditUrl(raw) {
+  const url = String(raw == null ? '' : raw).trim();
+  if (!url) return '';
+  if (/\/spreadsheets\/d\/e\//.test(url)) return url; // опубликованную не превратить в редактируемую
+
+  const idm = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (!idm) return url;
+
+  const gid = (url.match(/[?&#]gid=(\d+)/) || [])[1];
+  return 'https://docs.google.com/spreadsheets/d/' + idm[1] + '/edit' + (gid ? '#gid=' + gid : '');
+}
+
+function openSheetTab(inputId, what) {
+  const input = $('#' + inputId);
+  const value = input && input.value ? input.value.trim() : '';
+  if (!value) { toast('Сначала вставьте ссылку на ' + what, 'err'); return; }
+
+  const win = window.open(sheetEditUrl(value), '_blank', 'noopener');
+  if (!win) toast('Браузер заблокировал новую вкладку', 'err');
+}
+
 /* ---------- быстрая оценка ---------- */
 
 function openQuickDialog() {
@@ -1295,6 +1319,9 @@ function init() {
       btn.textContent = label;
     }
   });
+
+  $('#openSheet').addEventListener('click', () => openSheetTab('sheetUrl', 'состав'));
+  $('#openAtt').addEventListener('click', () => openSheetTab('attUrl', 'лист явки'));
 
   $('#btnPaste').addEventListener('click', () => {
     $('#pasteArea').value = '';

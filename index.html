@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
-<link rel="stylesheet" href="styles.css?v=19" />
+<link rel="stylesheet" href="styles.css?v=20" />
 </head>
 <body>
 <div class="app">
@@ -43,9 +43,13 @@
           <span class="pill" id="srcState">не подключено</span>
         </div>
         <label class="field">
-          <span>Ссылка на Google Таблицу</span>
-          <input id="sheetUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
-                 placeholder="https://docs.google.com/spreadsheets/d/…" />
+          <span>Ссылка на Google Таблицу (состав)</span>
+          <span class="url-row">
+            <input id="sheetUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                   placeholder="https://docs.google.com/spreadsheets/d/…" />
+            <button class="btn icon-out" id="openSheet" type="button"
+                    title="Открыть таблицу состава в новой вкладке" aria-label="Открыть таблицу состава">↗</button>
+          </span>
         </label>
         <div class="row">
           <button class="btn primary" id="btnLoadSheet" type="button">Загрузить</button>
@@ -61,9 +65,13 @@
           <span class="pill" id="attState">не загружена</span>
         </div>
         <label class="field">
-          <span>Ссылка на лист ответов формы</span>
-          <input id="attUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
-                 placeholder="Лист «Ответы на форму»" />
+          <span>Ссылка на лист явки</span>
+          <span class="url-row">
+            <input id="attUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                   placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=…#gid=…" />
+            <button class="btn icon-out" id="openAtt" type="button"
+                    title="Открыть лист явки в новой вкладке" aria-label="Открыть лист явки">↗</button>
+          </span>
         </label>
         <div class="row">
           <button class="btn primary" id="btnLoadAtt" type="button">Загрузить явку</button>
@@ -293,6 +301,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

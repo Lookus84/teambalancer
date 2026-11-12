@@ -602,3 +602,17 @@ dialog.sheet form { padding: 16px; }
 
 .list { margin: 10px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; color: #cbd8ec; }
 .list li { margin-bottom: 6px; }
+
+/* строка «адрес + кнопка открыть» */
+.url-row { display: flex; gap: 8px; align-items: stretch; }
+.url-row input { flex: 1; min-width: 0; }
+.btn.icon-out {
+  flex: none;
+  padding: 0 14px;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--accent);
+  border-color: rgba(34, 211, 238, .35);
+  background: rgba(34, 211, 238, .08);
+}
+.btn.icon-out:hover { background: rgba(34, 211, 238, .16); }
