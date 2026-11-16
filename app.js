@@ -23,10 +23,19 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '25';
+const APP_VERSION = '26';
 
 /* Лист истории: колонки идут в этом порядке, по ним же читаем обратно. */
 const HIST_TEAM_COLS = [4, 5, 6];
+
+/* Адреса по умолчанию: у всех участников поля уже заполнены, вставлять ничего не нужно.
+   Своё значение, введённое и сохранённое в приложении, всегда важнее этих. */
+const DEFAULT_URLS = {
+  sheet: 'https://docs.google.com/spreadsheets/d/10n1bVjkLzGcHpUVKJUdv15IsUPtgz5f_tWe4_dbIKr4/edit?gid=0#gid=0',
+  att: 'https://docs.google.com/spreadsheets/d/10n1bVjkLzGcHpUVKJUdv15IsUPtgz5f_tWe4_dbIKr4/edit?gid=1194018871#gid=1194018871',
+  hist: 'https://docs.google.com/spreadsheets/d/10n1bVjkLzGcHpUVKJUdv15IsUPtgz5f_tWe4_dbIKr4/edit?gid=1528219723#gid=1528219723',
+  script: 'https://script.google.com/macros/s/AKfycbzjwwr8s1gS68dpGiW6IAEt211EjzTEEteGREXvWg_z-D6yokSaCNTEhgYXyzNi5qvY/exec',
+};
 
 /* ======================================================================
    Мелкие утилиты
@@ -747,12 +756,13 @@ function filterByAttendance(players) {
 
 const blankState = () => ({
   players: [],
-  url: '',
-  attUrl: '',
+  url: DEFAULT_URLS.sheet,
+  attUrl: DEFAULT_URLS.att,
   attendance: null,
   attDateKey: null,
-  histUrl: '',
-  scriptUrl: '',
+  histUrl: DEFAULT_URLS.hist,
+  scriptUrl: DEFAULT_URLS.script,
+  scriptOff: false,
   history: [],
   teamCount: 3,
   opts: { useGk: true, onlyGoing: false, pots: true },
@@ -762,6 +772,9 @@ let state = blankState();
 let editingId = null;
 let lastResult = null;
 
+/** Сохранённое значение, если оно непустое, иначе адрес по умолчанию. */
+const urlOr = (value, fallback) => (typeof value === 'string' && value.trim() ? value : fallback);
+
 function loadState() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -770,12 +783,12 @@ function loadState() {
       const old = localStorage.getItem('teambalancer.v1');
       if (old) {
         const d = JSON.parse(old);
-        state = {
+        state = Object.assign(blankState(), {
           players: Array.isArray(d.players) ? d.players.map(makePlayer) : [],
-          url: typeof d.url === 'string' ? d.url : '',
+          url: urlOr(d.url, DEFAULT_URLS.sheet),
           teamCount: d.teamCount === 2 ? 2 : 3,
           opts: { useGk: true },
-        };
+        });
         saveState();
       }
       return;
@@ -783,12 +796,13 @@ function loadState() {
     const data = JSON.parse(raw);
     state = {
       players: Array.isArray(data.players) ? data.players.map(makePlayer) : [],
-      url: typeof data.url === 'string' ? data.url : '',
-      attUrl: typeof data.attUrl === 'string' ? data.attUrl : '',
+      url: urlOr(data.url, DEFAULT_URLS.sheet),
+      attUrl: urlOr(data.attUrl, DEFAULT_URLS.att),
       attendance: data.attendance && Array.isArray(data.attendance.going) ? data.attendance : null,
       attDateKey: typeof data.attDateKey === 'string' ? data.attDateKey : null,
-      histUrl: typeof data.histUrl === 'string' ? data.histUrl : '',
-      scriptUrl: typeof data.scriptUrl === 'string' ? data.scriptUrl : '',
+      histUrl: urlOr(data.histUrl, DEFAULT_URLS.hist),
+      scriptUrl: data.scriptOff === true ? '' : urlOr(data.scriptUrl, DEFAULT_URLS.script),
+      scriptOff: data.scriptOff === true,
       history: Array.isArray(data.history) ? data.history : [],
       teamCount: data.teamCount === 2 ? 2 : 3,
       opts: {
@@ -1388,15 +1402,29 @@ async function deleteGame(id) {
     ? 'Удалить игру ' + game.dateLabel + ' из приложения и из листа «История»?'
     : 'Удалить игру ' + game.dateLabel + ' с телефона?')) return;
 
+  const canCheck = inSheet && state.scriptUrl && state.histUrl;
   if (inSheet && state.scriptUrl) {
     try {
       await fetch(state.scriptUrl, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'delete', id: id }),
+        body: JSON.stringify({ sheet: 'История', action: 'delete', id: id }),
       });
-    } catch (e) { /* строка останется в листе — скажем об этом ниже */ }
+    } catch (e) { /* проверим листом ниже */ }
+  }
+
+  if (canCheck) {
+    // Скрипт мог не поддержать удаление — тогда честно оставляем строку и говорим об этом,
+    // иначе запись вернётся при следующей загрузке истории.
+    await new Promise((r) => setTimeout(r, 1200));
+    await loadHistory(true);
+    if ((state.history || []).some((g) => g.id === id)) {
+      toast('В таблице строка осталась — удали её вручную в листе «История»', 'err');
+      return;
+    }
+    toast('Удалено из приложения и из таблицы', 'ok');
+    return;
   }
 
   state.history = (state.history || []).filter((g) => g.id !== id);
@@ -1408,7 +1436,9 @@ async function deleteGame(id) {
 /** Строки листа «История» → массив игр. */
 function parseHistoryRows(rows) {
   if (!rows || rows.length < 2) return [];
-  const games = [];
+  // Одна игра — одна карточка, даже если в листе оказались две строки с одним ID
+  // (например, скрипт дописывает строки, а не обновляет). Нижняя строка считается свежей.
+  const byId = new Map();
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r] || [];
     const id = String(cell(row, 0)).trim();
@@ -1423,7 +1453,7 @@ function parseHistoryRows(rows) {
 
     const dateLabel = String(cell(row, 1)).trim() || id;
     const parsed = parseGameDate(dateLabel);
-    games.push({
+    byId.set(id, {
       id: id,
       dateKey: parsed ? parsed.key : id,
       dateLabel: dateLabel,
@@ -1435,7 +1465,7 @@ function parseHistoryRows(rows) {
       pending: false,
     });
   }
-  return games.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+  return Array.from(byId.values()).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
 }
 
 /** Подтянуть историю из таблицы. Локальные неотправленные записи сохраняем. */
@@ -1860,6 +1890,90 @@ function syncTeamControls() {
   }
 }
 
+/** Загрузка состава из таблицы. silent — без сообщений об ошибке (автозагрузка при старте). */
+async function loadRoster(url, silent) {
+  if (!url) {
+    if (!silent) toast('Вставь ссылку на таблицу', 'err');
+    return false;
+  }
+  try {
+    const text = await fetchSheetText(url);
+    const incoming = rowsToPlayers(parseCSV(text));
+    if (!incoming.length) throw new Error('В таблице не нашёл ни одного игрока');
+
+    if (!silent && state.players.length &&
+        !confirm('Заменить текущий состав (' + state.players.length +
+          ' чел.) данными из таблицы (' + incoming.length + ' чел.)?')) {
+      return false;
+    }
+
+    state.players = incoming;
+    state.url = url;
+    saveState();
+    renderPlayers();
+    renderHeaderState();
+    toast('Загружено: ' + incoming.length + ' игроков', 'ok');
+    return true;
+  } catch (err) {
+    if (!silent) {
+      const msg = err && err.message ? err.message : 'Не получилось загрузить';
+      toast(/fetch|network|Failed/i.test(msg)
+        ? 'Не удалось загрузить: проверь доступ по ссылке и интернет'
+        : msg, 'err');
+    }
+    return false;
+  }
+}
+
+/** Загрузка явки. silent — без сообщений об ошибке (автозагрузка при старте). */
+async function loadAttendance(url, silent) {
+  if (!url) {
+    if (!silent) toast('Вставь ссылку на лист ответов', 'err');
+    return false;
+  }
+  try {
+    const text = await fetchSheetText(url);
+    const parsed = parseAttendance(parseCSV(text), state.attDateKey);
+    if (parsed.error) throw new Error(parsed.error);
+
+    // выбранной вручную даты могло не оказаться в обновлённом листе
+    if (state.attDateKey && parsed.dateKey !== state.attDateKey) state.attDateKey = null;
+
+    state.attendance = {
+      dateKey: parsed.dateKey,
+      dateLabel: parsed.dateLabel,
+      autoKey: parsed.autoKey || parsed.dateKey,
+      columns: Array.isArray(parsed.columns) ? parsed.columns : [],
+      going: parsed.going,
+      notGoing: parsed.notGoing,
+      marked: Array.isArray(parsed.marked) ? parsed.marked : [],
+      format: parsed.format || 'form',
+    };
+    state.attUrl = url;
+    // если ещё никто не отметился, фильтр не включаем — иначе распределять некого
+    state.opts.onlyGoing = parsed.going.length > 0;
+    saveState();
+    renderAttendance();
+    syncTeamControls();
+    renderPlayers();
+    renderHeaderState();
+    lastResult = null;
+    $('#resultWrap').innerHTML = '';
+    toast(parsed.going.length
+      ? 'Игра ' + parsed.dateLabel + ': придут ' + parsed.going.length
+      : 'Игра ' + parsed.dateLabel + ': отметок пока нет', 'ok');
+    return true;
+  } catch (err) {
+    if (!silent) {
+      const msg = err && err.message ? err.message : 'Не получилось загрузить явку';
+      toast(/fetch|network|Failed/i.test(msg)
+        ? 'Не удалось загрузить ответы: проверь доступ к листу и интернет'
+        : msg, 'err');
+    }
+    return false;
+  }
+}
+
 function init() {
   loadState();
 
@@ -1880,36 +1994,12 @@ function init() {
   $('#sheetUrl').value = state.url || '';
 
   $('#btnLoadSheet').addEventListener('click', async () => {
-    const url = $('#sheetUrl').value.trim();
-    if (!url) { toast('Вставь ссылку на таблицу', 'err'); return; }
-
     const btn = $('#btnLoadSheet');
     const label = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Загружаю…';
     try {
-      const text = await fetchSheetText(url);
-      const incoming = rowsToPlayers(parseCSV(text));
-      if (!incoming.length) throw new Error('В таблице не нашёл ни одного игрока');
-
-      if (state.players.length && !confirm('Заменить текущий состав (' + state.players.length +
-        ' чел.) данными из таблицы (' + incoming.length + ' чел.)?')) {
-        btn.disabled = false;
-        btn.textContent = label;
-        return;
-      }
-
-      state.players = incoming;
-      state.url = url;
-      saveState();
-      renderPlayers();
-      renderHeaderState();
-      toast('Загружено: ' + incoming.length + ' игроков', 'ok');
-    } catch (err) {
-      const msg = err && err.message ? err.message : 'Не получилось загрузить';
-      toast(/fetch|network|Failed/i.test(msg)
-        ? 'Не удалось загрузить: проверь доступ по ссылке и интернет'
-        : msg, 'err');
+      await loadRoster($('#sheetUrl').value.trim(), false);
     } finally {
       btn.disabled = false;
       btn.textContent = label;
@@ -2023,49 +2113,12 @@ function init() {
   $('#attUrl').value = state.attUrl || '';
 
   $('#btnLoadAtt').addEventListener('click', async () => {
-    const url = $('#attUrl').value.trim();
-    if (!url) { toast('Вставь ссылку на лист ответов', 'err'); return; }
-
     const btn = $('#btnLoadAtt');
     const label = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Загружаю…';
     try {
-      const text = await fetchSheetText(url);
-      const parsed = parseAttendance(parseCSV(text), state.attDateKey);
-      if (parsed.error) throw new Error(parsed.error);
-
-      // выбранной вручную даты могло не оказаться в обновлённом листе
-      if (state.attDateKey && parsed.dateKey !== state.attDateKey) state.attDateKey = null;
-
-      state.attendance = {
-        dateKey: parsed.dateKey,
-        dateLabel: parsed.dateLabel,
-        autoKey: parsed.autoKey || parsed.dateKey,
-        columns: Array.isArray(parsed.columns) ? parsed.columns : [],
-        going: parsed.going,
-        notGoing: parsed.notGoing,
-        marked: Array.isArray(parsed.marked) ? parsed.marked : [],
-        format: parsed.format || 'form',
-      };
-      state.attUrl = url;
-      // если ещё никто не отметился, фильтр не включаем — иначе распределять некого
-      state.opts.onlyGoing = parsed.going.length > 0;
-      saveState();
-      renderAttendance();
-      syncTeamControls();
-      renderPlayers();
-      renderHeaderState();
-      lastResult = null;
-      $('#resultWrap').innerHTML = '';
-      toast(parsed.going.length
-        ? 'Игра ' + parsed.dateLabel + ': придут ' + parsed.going.length
-        : 'Игра ' + parsed.dateLabel + ': отметок пока нет', 'ok');
-    } catch (err) {
-      const msg = err && err.message ? err.message : 'Не получилось загрузить явку';
-      toast(/fetch|network|Failed/i.test(msg)
-        ? 'Не удалось загрузить ответы: проверь доступ к листу и интернет'
-        : msg, 'err');
+      await loadAttendance($('#attUrl').value.trim(), false);
     } finally {
       btn.disabled = false;
       btn.textContent = label;
@@ -2146,9 +2199,12 @@ function init() {
   });
 
   $('#scriptUrl').addEventListener('change', (e) => {
-    state.scriptUrl = e.target.value.trim();
+    const value = e.target.value.trim();
+    state.scriptUrl = value;
+    // пустое поле — сознательное «не писать в таблицу», иначе вернётся адрес по умолчанию
+    state.scriptOff = !value;
     saveState();
-    toast(state.scriptUrl ? 'Адрес скрипта сохранён' : 'Адрес скрипта очищен', 'ok');
+    toast(value ? 'Адрес скрипта сохранён' : 'Запись в таблицу выключена', 'ok');
   });
 
   $('#histList').addEventListener('click', (e) => {
@@ -2338,6 +2394,14 @@ function init() {
   renderAttendance();
   renderHistory();
   syncTeamControls();
+
+  // Первый запуск у участника: адреса уже вписаны, поэтому состав и явку подтягиваем сами.
+  // Ошибки молча — кнопки «Загрузить» остаются на месте.
+  if (!state.players.length) {
+    loadRoster(state.url, true).then((ok) => {
+      if (ok && !state.attendance) loadAttendance(state.attUrl, true);
+    });
+  }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
