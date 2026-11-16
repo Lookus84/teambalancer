@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
-<link rel="stylesheet" href="styles.css?v=26" />
+<link rel="stylesheet" href="styles.css?v=27" />
 </head>
 <body>
 <div class="app">
@@ -212,35 +212,88 @@
           <li>Вставь адрес в поле «Адрес веб-приложения» на экране «История».</li>
           <li>Ссылку на лист «История» вставь там же — по ней приложение читает историю и статистику.</li>
         </ol>
-        <pre class="codeblock" id="scriptCode">const SHEET = 'История';
+        <pre class="codeblock" id="scriptCode">/**
+ * История игр teambalancer → лист «История».
+ *
+ * Как подключить:
+ * 1. В таблице: Расширения → Apps Script, вставить этот код.
+ * 2. Развернуть → Новое развёртывание → тип «Веб-приложение»,
+ *    запуск от своего имени, доступ «все». Скопировать адрес (…/exec).
+ * 3. В приложении на экране «История» вставить адрес в поле «Адрес веб-приложения».
+ *
+ * После правки кода ВСЕГДА создавать новую версию развёртывания
+ * («Развернуть» → «Управление развёртываниями» → карандаш → версия «Новая»),
+ * иначе работает прежняя версия кода.
+ *
+ * Важно про ID: Google Таблицы охотно превращают «2026-11-17» в дату, и тогда сравнение
+ * со строкой не совпадает — сохранение дописывает дубль, удаление ничего не находит.
+ * Поэтому колонка ID держится в текстовом формате, а значения сравниваются через idOf().
+ */
+
+var SHEET = 'История';
+var HEADER = ['ID', 'Дата', 'Команд', 'Итог', 'Синие', 'Красные', 'Белые', 'Обновлено'];
+
+/** Значение ячейки ID → текст «2026-11-17» (дата тоже приводится к этому виду). */
+function idOf(value) {
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return String(value == null ? '' : value).trim();
+}
 
 function doPost(e) {
-  const body = JSON.parse(e.postData.contents);
-  const lock = LockService.getScriptLock();
+  var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sh = ss.getSheetByName(SHEET) || ss.insertSheet(SHEET);
-    if (sh.getLastRow() === 0) {
-      sh.appendRow(['ID', 'Дата', 'Команд', 'Итог', 'Синие', 'Красные', 'Белые', 'Обновлено']);
+    var body = JSON.parse((e.postData &amp;&amp; e.postData.contents) || '{}');
+    var id = idOf(body.id);
+    if (!id) return json({ ok: false, error: 'Не передан id игры' });
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(SHEET) || ss.insertSheet(SHEET);
+    if (sh.getLastRow() === 0) sh.appendRow(HEADER);
+
+    // ID — текстом, и старые строки тоже приводим к тексту, иначе поиск по ID не совпадёт
+    sh.getRange('A:A').setNumberFormat('@');
+    if (sh.getLastRow() &gt; 1) {
+      var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+      for (var i = 0; i &lt; ids.length; i++) ids[i] = [idOf(ids[i][0])];
+      sh.getRange(2, 1, ids.length, 1).setValues(ids);
     }
-    const id = String(body.id || '');
-    const ids = sh.getLastRow() &gt; 1
-      ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function (r) { return String(r[0]); })
-      : [];
-    const at = ids.indexOf(id);
+
+    /** Номера строк листа с этим ID (снизу вверх — свежие последними). */
+    var findRows = function () {
+      var last = sh.getLastRow();
+      if (last &lt; 2) return [];
+      var values = sh.getRange(2, 1, last - 1, 1).getValues();
+      var found = [];
+      for (var k = 0; k &lt; values.length; k++) {
+        if (idOf(values[k][0]) === id) found.push(k + 2);
+      }
+      return found;
+    };
 
     if (body.action === 'delete') {
-      if (at &gt;= 0) sh.deleteRow(at + 2);
-      return json({ ok: true, deleted: at &gt;= 0 });
+      var rows = findRows();
+      for (var d = rows.length - 1; d &gt;= 0; d--) sh.deleteRow(rows[d]);
+      return json({ ok: true, deleted: rows.length });
     }
 
-    const row = [id, body.date || '', body.teamCount || 0, body.score || '',
-      body.teams[0] || '', body.teams[1] || '', body.teams[2] || '', new Date()];
+    var teams = body.teams || [];
+    var row = [id, body.date || '', body.teamCount || 0, body.score || '',
+      teams[0] || '', teams[1] || '', teams[2] || '', new Date()];
 
-    if (at &gt;= 0) sh.getRange(at + 2, 1, 1, row.length).setValues([row]);
-    else sh.appendRow(row);
-    return json({ ok: true, updated: at &gt;= 0 });
+    var dup = findRows();
+    if (dup.length) {
+      // повторное сохранение той же даты: обновляем последнюю строку, лишние дубли убираем
+      var keep = dup[dup.length - 1];
+      for (var j = dup.length - 2; j &gt;= 0; j--) sh.deleteRow(dup[j]);
+      sh.getRange(keep - (dup.length - 1), 1, 1, row.length).setValues([row]);
+      return json({ ok: true, updated: true, duplicates: dup.length - 1 });
+    }
+
+    sh.appendRow(row);
+    return json({ ok: true, updated: false });
   } catch (err) {
     return json({ ok: false, error: String(err) });
   } finally {
@@ -411,6 +464,6 @@ function json(obj) {
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=26"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>

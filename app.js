@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '26';
+const APP_VERSION = '27';
 
 /* Лист истории: колонки идут в этом порядке, по ним же читаем обратно. */
 const HIST_TEAM_COLS = [4, 5, 6];
