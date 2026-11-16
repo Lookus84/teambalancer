@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '29';
+const APP_VERSION = '30';
 
 /* Лист истории: колонки идут в этом порядке, по ним же читаем обратно. */
 const HIST_TEAM_COLS = [4, 5, 6];
@@ -1587,7 +1587,8 @@ function historyStats(games) {
 }
 
 function historyCard(g) {
-  const score = (g.matches || []).length
+  const matchCount = (g.matches || []).length;
+  const score = matchCount
     ? g.matches.map((m) => esc(m.a) + ' ' + m.ga + ':' + m.gb + ' ' + esc(m.b)).join(' · ')
     : 'счёт не записан';
 
@@ -1607,12 +1608,17 @@ function historyCard(g) {
     '<div class="hist-head">' +
     '<div><div class="hist-date">' + esc(g.dateLabel || g.id) + '</div>' +
     '<div class="result-sub">' + esc(score) + '</div></div>' +
+    '<div class="hist-tags">' +
+    '<span class="chip">' + g.teams.length + ' ' + plural(g.teams.length, 'команда', 'команды', 'команд') + '</span>' +
+    (matchCount ? '<span class="chip">' + matchCount + ' ' + plural(matchCount, 'матч', 'матча', 'матчей') + '</span>' : '') +
     (g.pending ? '<span class="pill err">не в таблице</span>' : '') +
+    '</div>' +
     '</div>' +
     teams +
     '<div class="row" style="margin-top:10px">' +
     '<button class="btn ghost small-btn" type="button" data-hist="score" data-id="' + esc(g.id) + '">' +
-    ((g.matches || []).length ? 'Поправить счёт' : 'Вписать счёт') + '</button>' +
+    (matchCount ? 'Поправить счёт' : 'Вписать счёт') + '</button>' +
+    '<button class="btn ghost small-btn" type="button" data-hist="add" data-id="' + esc(g.id) + '">＋ матч</button>' +
     (g.pending ? '<button class="btn ghost small-btn" type="button" data-hist="push" data-id="' + esc(g.id) + '">Отправить в таблицу</button>' : '') +
     '<button class="btn ghost small-btn danger" type="button" data-hist="del" data-id="' + esc(g.id) + '">Удалить</button>' +
     '</div>' +
@@ -1645,9 +1651,9 @@ function statsHtml(st) {
     st.games + ' ' + plural(st.games, 'игра', 'игры', 'игр') + '</span></div>' +
 
     '<h3 class="stats-h">Посещаемость и очки</h3>' +
-    '<p class="hint">«Игр» — сколько игровых дней был в составе. «Матчей» — сколько матчей провёл: ' +
-    'в игре на 2 команды это один матч, на 3 команды — два. «Очки» — 3 за победу, 1 за ничью, ' +
-    'поэтому за один игровой день на 3 команды можно набрать до 6.</p>' +
+    '<p class="hint">«Игр» — сколько игровых дней был в составе. «Матчей» — сколько матчей провёл в них ' +
+    '(в круговом на 3 команды их два, в серии «победитель остаётся» — сколько сыграли). ' +
+    '«Очки» — 3 за победу, 1 за ничью, поэтому за игровой день их может быть больше трёх.</p>' +
     '<div class="tablewrap"><table class="ref-table"><thead><tr>' +
     '<th>Игрок</th><th>Игр</th><th>%</th><th>Матчей</th><th>В/Н/П</th><th>Очки</th>' +
     '</tr></thead><tbody>' + players + '</tbody></table></div>' +
@@ -1731,29 +1737,54 @@ function pairList(count) {
   return [[0, 1], [0, 2], [1, 2]];
 }
 
-function openScoreDialog(game) {
+/** Строка матча в диалоге счёта: команды выбираются, счёт вводится. */
+function matchRowHtml(teams, match) {
+  const options = (current) => teams.map((t) =>
+    '<option value="' + esc(t) + '"' + (t === current ? ' selected' : '') + '>' + esc(t) + '</option>').join('');
+
+  return '<div class="match-row">' +
+    '<select data-team="a" aria-label="Первая команда">' + options(match ? match.a : teams[0]) + '</select>' +
+    '<input data-goals="a" type="number" inputmode="numeric" min="0" max="99" step="1"' +
+    ' value="' + (match && isNum(match.ga) ? match.ga : '') + '" placeholder="—" aria-label="Голы первой" />' +
+    '<span class="match-colon">:</span>' +
+    '<input data-goals="b" type="number" inputmode="numeric" min="0" max="99" step="1"' +
+    ' value="' + (match && isNum(match.gb) ? match.gb : '') + '" placeholder="—" aria-label="Голы второй" />' +
+    '<select data-team="b" aria-label="Вторая команда">' + options(match ? match.b : teams[1]) + '</select>' +
+    '<button class="btn ghost icon match-del" type="button" data-remove title="Убрать матч" aria-label="Убрать матч">×</button>' +
+    '</div>';
+}
+
+function addMatchRow(teams, match) {
+  const box = $('#scoreRows');
+  if (!box) return;
+  box.insertAdjacentHTML('beforeend', matchRowHtml(teams, match));
+}
+
+/** Диалог счёта: список матчей, который можно дополнять (серия «победитель остаётся»). */
+function openScoreDialog(game, opts) {
   const dlg = $('#dlgScore');
   if (!dlg || !game) return;
 
   scoreGame = game;
+  const teams = game.teams.map((t) => t.name);
   $('#scoreTitle').textContent = 'Счёт · ' + (game.dateLabel || game.id);
 
-  const found = new Map((game.matches || []).map((m) => [m.a + '|' + m.b, m]));
-  $('#scoreRows').innerHTML = pairList(game.teams.length).map((pair, i) => {
-    const a = game.teams[pair[0]].name;
-    const b = game.teams[pair[1]].name;
-    const m = found.get(a + '|' + b);
-    return '<div class="pair-row">' +
-      '<span class="pair-names"><b>' + esc(a) + '</b><span class="muted"> — ' + esc(b) + '</span></span>' +
-      '<input class="pair-in" type="number" inputmode="numeric" min="0" max="99" step="1"' +
-      ' data-pair="' + i + '" data-side="a" value="' + (m ? m.ga : '') + '" placeholder="—" />' +
-      '<span class="pair-colon">:</span>' +
-      '<input class="pair-in" type="number" inputmode="numeric" min="0" max="99" step="1"' +
-      ' data-pair="' + i + '" data-side="b" value="' + (m ? m.gb : '') + '" placeholder="—" />' +
-      '</div>';
-  }).join('');
+  const existing = (game.matches || []).slice();
+  const rows = existing.length
+    ? existing
+    : pairList(game.teams.length).map((p) => ({ a: teams[p[0]], b: teams[p[1]], ga: '', gb: '' }));
 
-  $('#scoreNote').textContent = 'Пустая пара — матч не играли. Счёт можно вписать позже на экране «История».';
+  $('#scoreRows').innerHTML = rows.map((m) => matchRowHtml(teams, m)).join('');
+  if (opts && opts.addMatch) {
+    addMatchRow(teams, { a: teams[0], b: teams[1], ga: '', gb: '' });
+    const last = $('#scoreRows').lastElementChild;
+    if (last && last.scrollIntoView) last.scrollIntoView({ block: 'center' });
+  }
+
+  $('#scoreNote').textContent = existing.length
+    ? 'Можно дописать ещё матчи: «＋ ещё матч». Пустые строки не сохраняются.'
+    : 'Каждый матч — отдельная строка: команды и счёт. Сколько сыграли, столько и добавь — ' +
+      'можно дописывать после игры в «Истории». Пустые строки не сохраняются.';
   dlg.showModal();
 }
 
@@ -1761,17 +1792,36 @@ async function applyScoreDialog() {
   const game = scoreGame;
   if (!game) return;
 
+  const teams = game.teams.map((t) => t.name);
   const matches = [];
-  pairList(game.teams.length).forEach((pair, i) => {
-    const aEl = $('[data-pair="' + i + '"][data-side="a"]');
-    const bEl = $('[data-pair="' + i + '"][data-side="b"]');
-    if (!aEl || !bEl) return;
-    if (aEl.value === '' || bEl.value === '') return;
-    const ga = Number(aEl.value);
-    const gb = Number(bEl.value);
-    if (!isFinite(ga) || !isFinite(gb) || ga < 0 || gb < 0) return;
-    matches.push({ a: game.teams[pair[0]].name, b: game.teams[pair[1]].name, ga: ga, gb: gb });
-  });
+  let bad = null;
+
+  for (const row of $$('#scoreRows .match-row')) {
+    const a = row.querySelector('[data-team="a"]').value;
+    const b = row.querySelector('[data-team="b"]').value;
+    const gaRaw = row.querySelector('[data-goals="a"]').value;
+    const gbRaw = row.querySelector('[data-goals="b"]').value;
+
+    if (gaRaw === '' && gbRaw === '') continue; // матч не играли
+    if (a === b) { bad = a + ' и ' + b + ' — одна и та же команда'; break; }
+    if (gaRaw === '' || gbRaw === '') {
+      bad = a + '–' + b + ': заполни оба счёта';
+      break;
+    }
+    const ga = Number(gaRaw);
+    const gb = Number(gbRaw);
+    if (!isFinite(ga) || !isFinite(gb) || ga < 0 || gb < 0) {
+      bad = a + '–' + b + ': счёт должен быть числом';
+      break;
+    }
+    if (teams.indexOf(a) < 0 || teams.indexOf(b) < 0) {
+      bad = 'неизвестная команда';
+      break;
+    }
+    matches.push({ a: a, b: b, ga: ga, gb: gb });
+  }
+
+  if (bad) { toast(bad, 'err'); return; }
 
   game.matches = matches;
   scoreGame = null;
@@ -2278,6 +2328,7 @@ function init() {
     if (!game) return;
 
     if (b.dataset.hist === 'score') openScoreDialog(game);
+    if (b.dataset.hist === 'add') openScoreDialog(game, { addMatch: true });
     if (b.dataset.hist === 'del') deleteGame(game.id);
     if (b.dataset.hist === 'push') {
       pushGame(game).then((ok) => {
@@ -2290,6 +2341,22 @@ function init() {
   $('#scoreForm').addEventListener('submit', (e) => {
     e.preventDefault();
     applyScoreDialog();
+  });
+
+  $('#btnAddMatch').addEventListener('click', () => {
+    if (!scoreGame) return;
+    addMatchRow(scoreGame.teams.map((t) => t.name), null);
+    const last = $('#scoreRows').lastElementChild;
+    if (last && last.scrollIntoView) last.scrollIntoView({ block: 'center' });
+  });
+
+  $('#scoreRows').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-remove]');
+    if (!b) return;
+    const row = b.closest('.match-row');
+    const rows = $$('#scoreRows .match-row');
+    if (rows.length <= 1) { toast('Хотя бы один матч должен остаться', 'err'); return; }
+    if (row) row.remove();
   });
 
   $('#btnCopyScript').addEventListener('click', async () => {

@@ -735,3 +735,39 @@ dialog.sheet form { padding: 16px; }
   vertical-align: middle;
   white-space: nowrap;
 }
+
+/* список матчей в диалоге счёта */
+.match-row {
+  display: grid;
+  grid-template-columns: 1fr 46px 10px 46px 1fr 26px;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, .05);
+}
+.match-row:last-child { border-bottom: 0; }
+.match-row select {
+  padding: 8px 6px;
+  font-size: 13px;
+  padding-right: 22px;
+  background-position: calc(100% - 12px) 51%, calc(100% - 7px) 51%;
+}
+.match-row input {
+  padding: 8px 2px;
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.match-colon { text-align: center; color: var(--muted); font-weight: 700; }
+.match-del { padding: 0; font-size: 16px; line-height: 1; color: var(--muted); }
+.match-del:hover { color: var(--bad); }
+#scoreRows { max-height: 46vh; overflow-y: auto; margin-bottom: 8px; }
+
+/* плашки в шапке карточки игры */
+.hist-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-end;
+  align-items: flex-start;
+}
