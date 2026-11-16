@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '28';
+const APP_VERSION = '29';
 
 /* Лист истории: колонки идут в этом порядке, по ним же читаем обратно. */
 const HIST_TEAM_COLS = [4, 5, 6];
@@ -1461,6 +1461,7 @@ function parseHistoryRows(rows) {
 
     const dateLabel = String(cell(row, 1)).trim() || id;
     const parsed = parseGameDate(dateLabel);
+    const prev = byId.get(id);
     byId.set(id, {
       id: id,
       dateKey: parsed ? parsed.key : id,
@@ -1469,6 +1470,8 @@ function parseHistoryRows(rows) {
       teamCount: teams.length,
       matches: parseScoreCell(cell(row, 3)),
       updatedAt: String(cell(row, 7) || ''),
+      /* сколько строк листа пришлось на эту игру: >1 — дубли от старого скрипта */
+      sheetRows: prev ? (prev.sheetRows || 1) + 1 : 1,
       sent: true,
       pending: false,
     });
@@ -1492,6 +1495,8 @@ async function loadHistory(quiet) {
 
     state.history = fromSheet.concat(local)
       .sort((a, b) => String(b.dateKey || b.id).localeCompare(String(a.dateKey || a.id)));
+    /* игры, которые в листе лежат несколькими строками: показываем предупреждение */
+    histDupes = fromSheet.filter((g) => (g.sheetRows || 1) > 1);
     saveState();
     renderHistory();
     if (!quiet) {
@@ -1538,7 +1543,7 @@ function historyStats(games) {
       for (const name of names) {
         const key = normalizeName(name);
         if (!key) continue;
-        if (!players.has(key)) players.set(key, { name, games: 0, w: 0, d: 0, l: 0, pts: 0 });
+        if (!players.has(key)) players.set(key, { name, games: 0, matches: 0, w: 0, d: 0, l: 0, pts: 0 });
         const rec = players.get(key);
         rec.name = name;
         rec.games++;
@@ -1546,6 +1551,7 @@ function historyStats(games) {
           rec.w += st[ti].w;
           rec.d += st[ti].d;
           rec.l += st[ti].l;
+          rec.matches += st[ti].w + st[ti].d + st[ti].l;
           rec.pts += pts[ti];
         }
       }
@@ -1619,27 +1625,36 @@ function statsHtml(st) {
   const players = st.players.slice(0, 40).map((p) => {
     const pct = Math.round((p.games / st.games) * 100);
     return '<tr><td>' + esc(p.name) + '</td><td>' + p.games + '</td><td>' + pct + '%</td>' +
+      '<td>' + (p.matches || 0) + '</td>' +
       '<td>' + p.w + '/' + p.d + '/' + p.l + '</td><td>' + p.pts + '</td></tr>';
   }).join('');
 
-  const pairs = st.pairs.slice(0, 10).map((p) =>
+  const pairLimit = 15;
+  const pairs = st.pairs.slice(0, pairLimit).map((p) =>
     '<tr><td>' + esc(p.a) + ' + ' + esc(p.b) + '</td><td>' + p.times + '</td></tr>').join('');
+  const pairsNote = st.pairs.length > pairLimit
+    ? 'Показаны ' + pairLimit + ' самых частых из ' + st.pairs.length + '.'
+    : 'Всего пар: ' + st.pairs.length + '.';
 
   const predict = st.scored
     ? '<b>' + st.topWon + '</b> из <b>' + st.scored + '</b> (' + Math.round((st.topWon / st.scored) * 100) + '%)'
     : '—';
 
   return '<div class="card">' +
-    '<div class="card-head"><h2>Статистика</h2><span class="pill">' + st.games + ' игр</span></div>' +
+    '<div class="card-head"><h2>Статистика</h2><span class="pill">' +
+    st.games + ' ' + plural(st.games, 'игра', 'игры', 'игр') + '</span></div>' +
 
     '<h3 class="stats-h">Посещаемость и очки</h3>' +
-    '<p class="hint">«Игр» — сколько раз был в составе, «В/Н/П» — матчи его команды, «Очки» — 3 за победу, 1 за ничью.</p>' +
+    '<p class="hint">«Игр» — сколько игровых дней был в составе. «Матчей» — сколько матчей провёл: ' +
+    'в игре на 2 команды это один матч, на 3 команды — два. «Очки» — 3 за победу, 1 за ничью, ' +
+    'поэтому за один игровой день на 3 команды можно набрать до 6.</p>' +
     '<div class="tablewrap"><table class="ref-table"><thead><tr>' +
-    '<th>Игрок</th><th>Игр</th><th>%</th><th>В/Н/П</th><th>Очки</th>' +
+    '<th>Игрок</th><th>Игр</th><th>%</th><th>Матчей</th><th>В/Н/П</th><th>Очки</th>' +
     '</tr></thead><tbody>' + players + '</tbody></table></div>' +
 
     '<h3 class="stats-h">Сыгранность</h3>' +
-    '<p class="hint">Кто чаще всего попадал с кем в одну команду. Кого много — стоит разводить по разным составам.</p>' +
+    '<p class="hint">Кто чаще всего попадал с кем в одну команду. Считается по сохранённым играм, ' +
+    'поэтому в одной игре видно только тех, кто в ней был. ' + pairsNote + '</p>' +
     '<div class="tablewrap"><table class="ref-table"><thead><tr>' +
     '<th>Пара</th><th>Раз вместе</th>' +
     '</tr></thead><tbody>' + (pairs || '<tr><td colspan="2" class="muted">Пока нет данных</td></tr>') + '</tbody></table></div>' +
@@ -1647,6 +1662,33 @@ function statsHtml(st) {
     '<h3 class="stats-h">Баланс и результат</h3>' +
     '<p class="hint">Сильнейшая по сумме скилов команда набирала больше всех очков в ' + predict +
     ' игр со счётом. Если доля высокая — распределение по скилам предсказывает результат.</p>' +
+    '</div>';
+}
+
+/** «1 игра», «2 игры», «5 игр» */
+function plural(n, one, few, many) {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return many;
+  if (last > 1 && last < 5) return few;
+  if (last === 1) return one;
+  return many;
+}
+
+/** Предупреждение, если лист содержит несколько строк на одну игру. */
+function dupesCard() {
+  if (!histDupes.length) return '';
+  const list = histDupes.map((g) => esc(g.dateLabel || g.id) + ' — ' +
+    g.sheetRows + ' ' + plural(g.sheetRows, 'строка', 'строки', 'строк')).join('; ');
+
+  return '<div class="card hist-item">' +
+    '<div class="card-head"><h2>В листе дубли</h2><span class="pill err">' + histDupes.length + '</span></div>' +
+    '<p class="hint">' + list + '. Приложение показывает одну строку на игру — свежую, ' +
+    'и статистика ниже посчитана по ней.</p>' +
+    '<p class="hint">Так бывает, когда развёрнутый скрипт ещё не обновлён. Лечится один раз: ' +
+    '«Настройки» → «История: как подключить» → «Скопировать код» → вставить в Apps Script → ' +
+    '«Развернуть» → «Управление развёртываниями» → ✏️ → версия «Новая» → «Развернуть». ' +
+    'После этого сохрани игру за эту дату ещё раз — лишние строки удалятся сами.</p>' +
     '</div>';
 }
 
@@ -1660,7 +1702,9 @@ function renderHistory() {
     .sort((a, b) => String(b.dateKey || b.id).localeCompare(String(a.dateKey || a.id)));
 
   if (pill) {
-    pill.textContent = games.length ? games.length + ' игр' : 'пусто';
+    pill.textContent = games.length
+      ? games.length + ' ' + plural(games.length, 'игра', 'игры', 'игр')
+      : 'пусто';
     pill.className = 'pill' + (games.length ? ' ok' : '');
   }
 
@@ -1672,13 +1716,14 @@ function renderHistory() {
     return;
   }
 
-  listEl.innerHTML = games.map(historyCard).join('');
+  listEl.innerHTML = dupesCard() + games.map(historyCard).join('');
   if (statsEl) statsEl.innerHTML = statsHtml(historyStats(games));
 }
 
 /* ---------- диалог счёта ---------- */
 
 let scoreGame = null;
+let histDupes = [];
 
 /** Для 3 команд круговой: А–Б, А–В, Б–В. */
 function pairList(count) {
@@ -2429,7 +2474,7 @@ if (typeof module !== 'undefined' && module.exports) {
     contextOf, fieldRating, gkRating, fieldFilled, gkFilled,
     parseAttendance, parseAttendanceMatrix, parseGameDate, normalizeName, isGoingAnswer, attendanceMark,
     parseHistoryRows, historyStats, parseTeamCell, parseScoreCell, formatTeamCell, formatScoreCell,
-    todayKey,
+    todayKey, plural,
   };
 }
 
