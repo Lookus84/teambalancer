@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '27';
+const APP_VERSION = '28';
 
 /* Лист истории: колонки идут в этом порядке, по ним же читаем обратно. */
 const HIST_TEAM_COLS = [4, 5, 6];
@@ -756,6 +756,8 @@ function filterByAttendance(players) {
 
 const blankState = () => ({
   players: [],
+  /* имена игроков, которые реально были в листе состава: остальные добавлены на телефоне */
+  sheetNames: [],
   url: DEFAULT_URLS.sheet,
   attUrl: DEFAULT_URLS.att,
   attendance: null,
@@ -796,6 +798,7 @@ function loadState() {
     const data = JSON.parse(raw);
     state = {
       players: Array.isArray(data.players) ? data.players.map(makePlayer) : [],
+      sheetNames: Array.isArray(data.sheetNames) ? data.sheetNames : [],
       url: urlOr(data.url, DEFAULT_URLS.sheet),
       attUrl: urlOr(data.attUrl, DEFAULT_URLS.att),
       attendance: data.attendance && Array.isArray(data.attendance.going) ? data.attendance : null,
@@ -989,10 +992,15 @@ function renderPlayers() {
     return b.field - a.field || a.name.localeCompare(b.name, 'ru');
   });
 
+  // есть ли игрок в листе состава: если нет — он добавлен только на этом телефоне
+  const sheetNames = new Set(state.sheetNames || []);
+  const localOnly = (p) => sheetNames.size > 0 && !sheetNames.has(normalizeName(p.name));
+
   $('#playersList').innerHTML = sorted.map((p) => {
     const note = playerNote(p);
     return '<div class="player" data-id="' + esc(p.id) + '">' +
-      '<div class="p-main"><div class="p-name">' + esc(p.name) + '</div>' +
+      '<div class="p-main"><div class="p-name">' + esc(p.name) +
+      (localOnly(p) ? '<span class="local-tag">только здесь</span>' : '') + '</div>' +
       (note ? '<div class="p-sub">' + esc(note) + '</div>' : '') + '</div>' +
       '<span class="ov' + (p.rated ? '' : ' none') + '">' + (p.rated ? fmt(p.field) : '—') + '</span>' +
       '<span class="ov gk' + (p.rated ? '' : ' none') + '">' + (p.rated ? fmt(p.gk) : '—') + '</span>' +
@@ -1901,13 +1909,20 @@ async function loadRoster(url, silent) {
     const incoming = rowsToPlayers(parseCSV(text));
     if (!incoming.length) throw new Error('В таблице не нашёл ни одного игрока');
 
-    if (!silent && state.players.length &&
-        !confirm('Заменить текущий состав (' + state.players.length +
-          ' чел.) данными из таблицы (' + incoming.length + ' чел.)?')) {
-      return false;
+    if (!silent && state.players.length) {
+      const incomingNames = new Set(incoming.map((p) => normalizeName(p.name)));
+      const lost = state.players.filter((p) => !incomingNames.has(normalizeName(p.name)));
+      const question = 'Заменить текущий состав (' + state.players.length +
+        ' чел.) данными из таблицы (' + incoming.length + ' чел.)?' +
+        (lost.length
+          ? '\n\nВ таблице нет: ' + lost.map((p) => p.name).join(', ') +
+            '. После загрузки этих игроков в составе не будет.'
+          : '');
+      if (!confirm(question)) return false;
     }
 
     state.players = incoming;
+    state.sheetNames = incoming.map((p) => normalizeName(p.name));
     state.url = url;
     saveState();
     renderPlayers();
@@ -2045,7 +2060,8 @@ function init() {
     const draft = readPlayerForm();
     if (!draft.name) { toast('Нужно имя', 'err'); return; }
 
-    if (editingId) {
+    const wasEdit = !!editingId;
+    if (wasEdit) {
       const i = state.players.findIndex((p) => p.id === editingId);
       if (i >= 0) state.players[i] = Object.assign(draft, { id: editingId });
     } else {
@@ -2056,7 +2072,10 @@ function init() {
     renderPlayers();
     renderHeaderState();
     $('#dlgPlayer').close();
-    toast('Сохранено', 'ok');
+    // приложение не пишет состав в Google Таблицу — говорим об этом прямо
+    toast(wasEdit
+      ? 'Сохранено на этом телефоне — в таблице изменение не появится'
+      : 'Добавлен только на этом телефоне — в листе состава его нет', 'ok');
   });
 
   $('#btnDeletePlayer').addEventListener('click', () => {

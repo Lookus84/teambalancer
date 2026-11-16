@@ -719,3 +719,19 @@ dialog.sheet form { padding: 16px; }
   .viewswitch button { font-size: 11.5px; padding: 8px 3px; }
   .tabbar button { font-size: 10px; }
 }
+
+/* метка «игрок есть только на этом телефоне» */
+.local-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid rgba(251, 191, 36, .38);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, .1);
+  color: var(--warn);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
