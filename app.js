@@ -23,7 +23,7 @@ const TEAM_META = [
 ];
 
 const LS_KEY = 'teambalancer.v2';
-const APP_VERSION = '30';
+const APP_VERSION = '31';
 
 /* Лист истории: колонки идут в этом порядке, по ним же читаем обратно. */
 const HIST_TEAM_COLS = [4, 5, 6];
@@ -2084,6 +2084,50 @@ async function loadAttendance(url, silent) {
   }
 }
 
+/** Браузерное окружение: от него зависит путь установки приложения. */
+function browserInfo() {
+  const ua = String((typeof navigator !== 'undefined' && navigator.userAgent) || '');
+  const isIOS = /iPhone|iPad|iPod/.test(ua) ||
+    (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(ua);
+  let name = 'other';
+  if (/YaBrowser/.test(ua)) name = 'yandex';
+  else if (/Edg\//.test(ua)) name = 'edge';
+  else if (/OPR\//.test(ua)) name = 'opera';
+  else if (/Firefox\/|FxiOS/.test(ua)) name = 'firefox';
+  else if (/CriOS|Chrome\//.test(ua)) name = 'chrome';
+  else if (/Safari\//.test(ua)) name = 'safari';
+  return { name: name, isIOS: isIOS, isAndroid: isAndroid };
+}
+
+/** Подсказка «как поставить приложение» под текущий браузер. */
+function installHelpText(installed) {
+  if (installed) return '';
+
+  const b = browserInfo();
+  if (b.isIOS) {
+    return '<b>iPhone и iPad:</b> «Поделиться» → «На экран “Домой”». Надёжнее всего это работает ' +
+      'в Safari — в других браузерах пункт бывает недоступен.';
+  }
+  if (b.name === 'yandex') {
+    return '<b>Яндекс Браузер:</b> меню ⋮ → «Установить приложение» или «Добавить на главный экран». ' +
+      'Если такого пункта нет или приложение открывается как обычная вкладка — открой ту же ссылку в Chrome.';
+  }
+  if (b.name === 'firefox') {
+    return '<b>Firefox:</b> на компьютере веб-приложение отдельным окном не ставится — открой ссылку ' +
+      'в Chrome, Яндекс Браузере, Edge или Safari. На Android в Firefox есть «Добавить на главный экран».';
+  }
+  if (b.isAndroid) {
+    return '<b>Android:</b> меню ⋮ → «Установить приложение» или «Добавить на главный экран».';
+  }
+  if (b.name === 'safari') {
+    return '<b>Safari:</b> на компьютере — «Файл» → «Добавить в Dock»; на iPhone — ' +
+      '«Поделиться» → «На экран “Домой”».';
+  }
+  return '<b>Компьютер:</b> меню браузера ⋮ → «Установить приложение» (у Chrome и Edge бывает иконка ' +
+    'в адресной строке). Если пункта нет — открой ссылку в Chrome, Яндекс Браузере или Edge.';
+}
+
 function init() {
   loadState();
 
@@ -2419,6 +2463,7 @@ function init() {
   /* --- установка приложения --- */
   const installBtn = $('#btnInstall');
   const installNote = $('#installNote');
+  const installHelp = $('#installHelp');
   let installEvent = null;
 
   const isStandalone = () => {
@@ -2441,6 +2486,8 @@ function init() {
     if (installNote) {
       installNote.textContent = installed ? 'Приложение установлено на этом устройстве.' : '';
     }
+    // подсказка по установке — под то браузерное окружение, в котором открыто приложение
+    if (installHelp) installHelp.innerHTML = installHelpText(installed);
   };
   refreshInstallButtons();
 
@@ -2541,7 +2588,7 @@ if (typeof module !== 'undefined' && module.exports) {
     contextOf, fieldRating, gkRating, fieldFilled, gkFilled,
     parseAttendance, parseAttendanceMatrix, parseGameDate, normalizeName, isGoingAnswer, attendanceMark,
     parseHistoryRows, historyStats, parseTeamCell, parseScoreCell, formatTeamCell, formatScoreCell,
-    todayKey, plural,
+    todayKey, plural, browserInfo, installHelpText,
   };
 }
 
